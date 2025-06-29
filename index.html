@@ -27,7 +27,6 @@
     #resetBtn { background: #ccc; color: #222; }
     #resetBtn:active { background: #aaa; }
     .icon-wash { width: 32px; height: 32px; vertical-align: middle; margin-right: 0.5em; }
-    .alarm-instructions { color: #666; font-size: 0.98em; margin-top: 1em; }
     @media (max-width: 500px) {
       .container { padding: 1em; }
       .icon-wash { width: 24px; height: 24px; }
@@ -40,9 +39,6 @@
       <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f9fc.png" alt="Washing Machine" class="icon-wash">
       Washing Machine Start Time
     </h3>
-    <div class="desc">
-      Calculate the start time
-    </div>
     <form id="calcForm" autocomplete="off" onsubmit="event.preventDefault(); calculateStartTime();">
       <div class="inputs-group">
         <label for="finishHourTens">Desired Finish Time:</label>
@@ -97,8 +93,8 @@
         </div>
       </div>
       <div class="button-row">
-        <button type="submit" id="calcBtn" class="main-btn">▶️<br>Calculate</button>
-        <button type="reset" id="resetBtn" class="main-btn">🔄<br>Reset</button>
+        <button type="submit" id="calcBtn" class="main-btn">🧮 Calculate</button>
+        <button type="reset" id="resetBtn" class="main-btn">🔄 Reset</button>
       </div>
     </form>
     <div id="result" aria-live="polite"></div>
@@ -215,12 +211,11 @@
       let roundedDownStr = roundedDownSetting !== null
         ? `${Math.floor(roundedDownSetting/60)}:${pad(roundedDownSetting%60)}`
         : "No suitable timer setting";
-      let finishTimeStr = `${pad(finishHour)}:${pad(finishMinute)}`;
       resultDiv.innerHTML =
+        `<div>Closest round down timer setting:</div>` +
+        `<h2>${roundedDownStr}</h2>` +
         `<div><strong>Start the washing machine at:</strong> ${startHour}:${startMinute}</div>` +
-        `<div><strong>Actual start in:</strong> ${exactStartIn}</div>` +
-        `<div><strong>Finish time:</strong> <span id="finishTimeCopy">${finishTimeStr}</span></div>` +
-        `<div><strong>Closest round down timer setting:</strong> ${roundedDownStr}</div>`;
+        `<div><strong>Actual start in:</strong> ${exactStartIn}</div>`;
     }
 
     document.getElementById('calcForm').addEventListener('reset', () => {
