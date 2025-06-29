@@ -27,8 +27,8 @@
     #calcBtn:active { background: #217dbb; }
     #resetBtn { background: #ccc; color: #222; }
     #resetBtn:active { background: #aaa; }
-    #setGoogleTimerBtn, #setSamsungTimerBtn { font-size: 1em; background: #eaf6ff; border: 1px solid #3498db; color: #217dbb; border-radius: 6px; padding: 0.5em 1em; cursor: pointer; display:inline-flex; align-items:center; gap:0.4em; }
-    #setGoogleTimerBtn:active, #setSamsungTimerBtn:active { background: #b3e0ff; }
+    #setAlarmBtn { font-size: 1em; background: #eaf6ff; border: 1px solid #3498db; color: #217dbb; border-radius: 6px; padding: 0.5em 1em; cursor: pointer; display:inline-flex; align-items:center; gap:0.4em; }
+    #setAlarmBtn:active { background: #b3e0ff; }
     .icon-wash { width: 32px; height: 32px; vertical-align: middle; margin-right: 0.5em; }
     @media (max-width: 500px) {
       .container { padding: 1em; }
@@ -99,10 +99,9 @@
         </div>
       </div>
       <div class="button-row">
-        <button type="submit" id="calcBtn" class="main-btn">🧮<br>Calculate</button><>
-        <button type="reset" id="resetBtn" class="main-btn">🔄<br>Reset</button><br>
-        <button type="button" id="setGoogleTimerBtn" class="main-btn">🕰️<br>Google Clock</button>
-        <button type="button" id="setSamsungTimerBtn" class="main-btn">⏰<br>Samsung Clock</button>
+        <button type="submit" id="calcBtn" class="main-btn">🧮 Calculate</button>
+        <button type="reset" id="resetBtn" class="main-btn">🔄 Reset</button>
+        <button type="button" id="setAlarmBtn" class="main-btn">⏰ Set Alarm</button>
       </div>
     </form>
     <div id="result" aria-live="polite"></div>
@@ -184,14 +183,13 @@
       debouncedCalculateStartTime();
     }
 
-    function setTimerButtons(minutes, finishTimeStr) {
-      // Google Clock app (will just open the app, not prefill timer)
-      document.getElementById('setGoogleTimerBtn').onclick = function() {
-        window.location.href = "intent://timer/#Intent;scheme=timer;package=com.google.android.deskclock;end";
-      };
-      // Samsung Clock app (will just open the app, not prefill timer)
-      document.getElementById('setSamsungTimerBtn').onclick = function() {
-        window.location.href = "intent://#Intent;package=com.sec.android.app.clockpackage;end";
+    function setAlarmButton(hour, minute, label) {
+      const btn = document.getElementById('setAlarmBtn');
+      btn.style.display = '';
+      btn.onclick = function() {
+        window.location.href =
+          `intent://com.android.alarmclock/alarm?hour=${hour}&minutes=${minute}&message=${encodeURIComponent(label)}` +
+          `#Intent;action=android.intent.action.SET_ALARM;end`;
       };
     }
 
@@ -202,7 +200,7 @@
       const [durHour, durMinute] = getTimeFromDigits('duration');
       if ((finishHour > 23 || finishMinute > 59) || (durHour > 23 || durMinute > 59)) {
         resultDiv.innerHTML = "Please enter valid times.";
-        setTimerButtons(1, "00:00");
+        setAlarmButton(0, 0, "Washing machine done");
         return;
       }
       const now = new Date();
@@ -235,10 +233,7 @@
         `<div><strong>Start the washing machine at:</strong> ${startHour}:${startMinute}</div>` +
         `<div><strong>Actual start in:</strong> ${exactStartIn}</div>` +
         `<div><strong>Closest round down timer setting:</strong> ${roundedDownStr}</div>`;
-      let finishDiffMs = finishDate.getTime() - now.getTime();
-      let finishDiffMins = Math.round(finishDiffMs / (1000 * 60));
-      let finishTimeStr = `${pad(finishHour)}:${pad(finishMinute)}`;
-      setTimerButtons(finishDiffMins, finishTimeStr);
+      setAlarmButton(finishHour, finishMinute, "Washing machine done");
     }
 
     document.getElementById('calcForm').addEventListener('reset', () => {
