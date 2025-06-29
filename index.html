@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Washing Machine Start Time</title>
+  <style>
+    body { font-family: sans-serif; margin: 1em; background: #f9f9f9; }
+    .container { max-width: 430px; margin: auto; background: #fff; padding: 2em; border-radius: 12px; box-shadow: 0 2px 8px #0001; }
+    h2, h3 { margin-top: 0; }
+    label { display: block; margin-top: 1em; font-weight: 500; }
+    .time-input { display: flex; gap: 0.5em; align-items: center; margin-bottom: 1em; }
+    .digit-control { display: flex; flex-direction: column; align-items: center; width: 2.5em; }
+    button.digit-btn { width: 2.5em; height: 2em; font-size: 1.2em; cursor: pointer; user-select: none; background: #eaf6ff; border: none; border-radius: 4px; }
+    button.digit-btn:active { background: #b3e0ff; }
+    input.digit { width: 2.5em; font-size: 1.5em; text-align: center; border: 1px solid #ccc; border-radius: 4px; pointer-events: none; background: #f9f9f9; }
+    .colon { font-size: 1.5em; line-height: 2.5em; user-select: none; }
+    .desc { color: #555; margin-bottom: 1em; }
+    #result { margin-top: 2em; padding: 1em; background: #eaf6ff; border-radius: 8px; font-size: 1.15em; }
+    .inputs-group { margin-bottom: 1.5em; }
+    @media (max-width: 500px) {
+      .container { padding: 1em; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container" role="main">
+    <h3>Washing Machine Start Time</h3>
+    <div class="desc">
+      Calculate the start time
+    </div>
+    <form id="calcForm" autocomplete="off" onsubmit="event.preventDefault(); calculateStartTime();">
+      <div class="inputs-group">
+        <label for="finishHourTens">Desired Finish Time:</label>
+        <div class="time-input" id="finishTimeInput">
+          <div class="digit-control">
+            <button type="button" class="digit-btn" onclick="changeDigit('finishHourTens', 1, 'finish')">▲</button>
+            <input id="finishHourTens" class="digit" type="text" value="0" maxlength="1" readonly />
+            <button type="button" class="digit-btn" onclick="changeDigit('finishHourTens', -1, 'finish')">▼</button>
+          </div>
+          <div class="digit-control">
+            <button type="button" class="digit-btn" onclick="changeDigit('finishHourOnes', 1, 'finish')">▲</button>
+            <input id="finishHourOnes" class="digit" type="text" value="0" maxlength="1" readonly />
+            <button type="button" class="digit-btn" onclick="changeDigit('finishHourOnes', -1, 'finish')">▼</button>
+          </div>
+          <div class="colon">:</div>
+          <div class="digit-control">
+            <button type="button" class="digit-btn" onclick="changeDigit('finishMinuteTens', 1, 'finish')">▲</button>
+            <input id="finishMinuteTens" class="digit" type="text" value="0" maxlength="1" readonly />
+            <button type="button" class="digit-btn" onclick="changeDigit('finishMinuteTens', -1, 'finish')">▼</button>
+          </div>
+          <div class="digit-control">
+            <button type="button" class="digit-btn" onclick="changeDigit('finishMinuteOnes', 1, 'finish')">▲</button>
+            <input id="finishMinuteOnes" class="digit" type="text" value="0" maxlength="1" readonly />
+            <button type="button" class="digit-btn" onclick="changeDigit('finishMinuteOnes', -1, 'finish')">▼</button>
+          </div>
+        </div>
+      </div>
+      <div class="inputs-group">
+        <label for="durationHourTens">Washing Program Duration:</label>
+        <div class="time-input" id="durationInput">
+          <div class="digit-control">
+            <button type="button" class="digit-btn" onclick="changeDigit('durationHourTens', 1, 'duration')">▲</button>
+            <input id="durationHourTens" class="digit" type="text" value="0" maxlength="1" readonly />
+            <button type="button" class="digit-btn" onclick="changeDigit('durationHourTens', -1, 'duration')">▼</button>
+          </div>
+          <div class="digit-control">
+            <button type="button" class="digit-btn" onclick="changeDigit('durationHourOnes', 1, 'duration')">▲</button>
+            <input id="durationHourOnes" class="digit" type="text" value="2" maxlength="1" readonly />
+            <button type="button" class="digit-btn" onclick="changeDigit('durationHourOnes', -1, 'duration')">▼</button>
+          </div>
+          <div class="colon">:</div>
+          <div class="digit-control">
+            <button type="button" class="digit-btn" onclick="changeDigit('durationMinuteTens', 1, 'duration')">▲</button>
+            <input id="durationMinuteTens" class="digit" type="text" value="3" maxlength="1" readonly />
+            <button type="button" class="digit-btn" onclick="changeDigit('durationMinuteTens', -1, 'duration')">▼</button>
+          </div>
+          <div class="digit-control">
+            <button type="button" class="digit-btn" onclick="changeDigit('durationMinuteOnes', 1, 'duration')">▲</button>
+            <input id="durationMinuteOnes" class="digit" type="text" value="9" maxlength="1" readonly />
+            <button type="button" class="digit-btn" onclick="changeDigit('durationMinuteOnes', -1, 'duration')">▼</button>
+          </div>
+        </div>
+      </div>
+      <button type="submit" style="margin-top:1em;">Calculate</button>
+      <button type="reset" style="background:#ccc; color:#222; margin-left:1em;">Reset</button>
+    </form>
+    <div id="result" aria-live="polite"></div>
+  </div>
+  <script>
+    // Set default finish time to next rounded hour + 3
+    function setDefaults() {
+      const now = new Date();
+      let h = now.getHours();
+      let m = now.getMinutes();
+      // Next rounded hour
+      let finishHour = m === 0 ? h : h + 1;
+      finishHour = (finishHour + 3) % 24; // Add 3 hours, wrap around 24
+      document.getElementById('finishHourTens').value = Math.floor(finishHour / 10);
+      document.getElementById('finishHourOnes').value = finishHour % 10;
+      document.getElementById('finishMinuteTens').value = 0;
+      document.getElementById('finishMinuteOnes').value = 0;
+
+      // Default duration to 2:39
+      document.getElementById('durationHourTens').value = 0;
+      document.getElementById('durationHourOnes').value = 2;
+      document.getElementById('durationMinuteTens').value = 3;
+      document.getElementById('durationMinuteOnes').value = 9;
+    }
+
+    window.onload = function() {
+      setDefaults();
+      calculateStartTime();
+    };
+
+    // Timer settings list in minutes
+    const timerSettings = [];
+    for (let h = 0; h <= 10; h++) {
+      if (h > 0) timerSettings.push(h * 60);
+      if (h < 10) timerSettings.push(h * 60 + 30);
+    }
+    for (let h = 11; h <= 24; h++) {
+      timerSettings.push(h * 60);
+    }
+
+    function pad(n) { return n.toString().padStart(2, '0'); }
+
+    function getTimeFromDigits(prefix) {
+      const hour = parseInt(document.getElementById(prefix + 'HourTens').value, 10) * 10 +
+                   parseInt(document.getElementById(prefix + 'HourOnes').value, 10);
+      const minute = parseInt(document.getElementById(prefix + 'MinuteTens').value, 10) * 10 +
+                     parseInt(document.getElementById(prefix + 'MinuteOnes').value, 10);
+      return [hour, minute];
+    }
+
+    // Debounce timer variable
+    let debounceTimer = null;
+
+    function debouncedCalculateStartTime() {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        calculateStartTime();
+      }, 1500);
+    }
+
+    function changeDigit(id, delta, type) {
+      const input = document.getElementById(id);
+      let val = parseInt(input.value, 10);
+      if (isNaN(val)) val = 0;
+      val += delta;
+
+      // Define max and min per digit position
+      let max = 9;
+      let min = 0;
+
+      if (id.includes('HourTens')) {
+        max = 2;
+      }
+      if (id.includes('HourOnes')) {
+        // max depends on tens digit
+        const tens = parseInt(document.getElementById(type + 'HourTens').value, 10);
+        max = tens === 2 ? 3 : 9;
+      }
+      if (id.includes('MinuteTens')) {
+        max = 5;
+      }
+      if (id.includes('MinuteOnes')) {
+        max = 9;
+      }
+
+      if (val > max) val = min;
+      if (val < min) val = max;
+
+      input.value = val;
+
+      // After changing hour tens, validate hour ones max
+      if (id.includes('HourTens')) {
+        const onesInput = document.getElementById(type + 'HourOnes');
+        const tensVal = val;
+        let onesVal = parseInt(onesInput.value, 10);
+        if (tensVal === 2 && onesVal > 3) {
+          onesInput.value = 3;
+        }
+      }
+
+      // Debounced calculation
+      debouncedCalculateStartTime();
+    }
+
+    function calculateStartTime() {
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = "";
+
+      // Get finish time and duration from digit controls
+      const [finishHour, finishMinute] = getTimeFromDigits('finish');
+      const [durHour, durMinute] = getTimeFromDigits('duration');
+
+      // Validate
+      if ((finishHour > 23 || finishMinute > 59) || (durHour > 23 || durMinute > 59)) {
+        resultDiv.innerHTML = "Please enter valid times.";
+        return;
+      }
+
+      const now = new Date();
+      let finishDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), finishHour, finishMinute);
+      if (finishDate < now) finishDate.setDate(finishDate.getDate() + 1);
+
+      const durationMins = durHour * 60 + durMinute;
+      const durationMs = durationMins * 60 * 1000;
+
+      // Calculate start time
+      let startDate = new Date(finishDate.getTime() - durationMs);
+
+      // If start time has already passed, assume next day (add 24h)
+      if (startDate < now) {
+        startDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
+      }
+
+      let startHour = startDate.getHours().toString().padStart(2, '0');
+      let startMinute = startDate.getMinutes().toString().padStart(2, '0');
+
+      // Calculate time until start
+      let diffMs = startDate.getTime() - now.getTime();
+      let diffMins = Math.round(diffMs / (1000 * 60));
+      let diffHours = Math.floor(diffMins / 60);
+      let diffMinutes = diffMins % 60;
+
+      let exactStartIn = `${diffHours} hour(s) and ${diffMinutes} minute(s) from now`;
+
+      // Find largest timer setting <= diffMins (round down)
+      let roundedDownSetting = null;
+      for (let i = timerSettings.length - 1; i >= 0; i--) {
+        if (timerSettings[i] <= diffMins) {
+          roundedDownSetting = timerSettings[i];
+          break;
+        }
+      }
+      let roundedDownStr = roundedDownSetting !== null
+        ? `${Math.floor(roundedDownSetting/60)}:${pad(roundedDownSetting%60)}`
+        : "No suitable timer setting";
+
+      resultDiv.innerHTML =
+        `<div><strong>Start the washing machine at:</strong> ${startHour}:${startMinute}</div>` +
+        `<div><strong>Actual start in:</strong> ${exactStartIn}</div>` +
+        `<div><strong>Closest round down timer setting:</strong> ${roundedDownStr}</div>`;
+    }
+
+    document.getElementById('calcForm').addEventListener('reset', () => {
+      setTimeout(() => {
+        setDefaults();
+        calculateStartTime();
+        document.getElementById('result').innerHTML = "";
+      }, 50);
+    });
+  </script>
+</body>
+</html>
