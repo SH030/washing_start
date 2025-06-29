@@ -11,7 +11,6 @@
   <style>
     body { font-family: sans-serif; margin: 1em; background: #f9f9f9; }
     .container { max-width: 430px; margin: auto; background: #fff; padding: 2em; border-radius: 12px; box-shadow: 0 2px 8px #0001; }
-    h2, h3 { margin-top: 0; }
     label { display: block; margin-top: 1em; font-weight: 500; }
     .time-input { display: flex; gap: 0.5em; align-items: center; margin-bottom: 1em; }
     .digit-control { display: flex; flex-direction: column; align-items: center; width: 2.5em; }
@@ -22,15 +21,15 @@
     .desc { color: #555; margin-bottom: 1em; }
     #result { margin-top: 2em; padding: 1em; background: #eaf6ff; border-radius: 8px; font-size: 1.15em; }
     .inputs-group { margin-bottom: 1.5em; }
-    #setTimerBtn { font-size: 1em; background: #eaf6ff; border: 1px solid #3498db; color: #217dbb; border-radius: 6px; padding: 0.5em 1em; cursor: pointer; display:inline-flex; align-items:center; gap:0.4em; }
-    #setTimerBtn:active { background: #b3e0ff; }
-    .icon-wash { width: 32px; height: 32px; vertical-align: middle; margin-right: 0.5em; }
     .button-row { display: flex; gap: 0.7em; align-items: center; margin-top: 1em; }
     .main-btn { display: flex; align-items: center; gap: 0.4em; font-size: 1em; border-radius: 6px; padding: 0.5em 1em; border: none; cursor: pointer; }
     #calcBtn { background: #3498db; color: #fff; }
     #calcBtn:active { background: #217dbb; }
     #resetBtn { background: #ccc; color: #222; }
     #resetBtn:active { background: #aaa; }
+    #setGoogleTimerBtn, #setSamsungTimerBtn { font-size: 1em; background: #eaf6ff; border: 1px solid #3498db; color: #217dbb; border-radius: 6px; padding: 0.5em 1em; cursor: pointer; display:inline-flex; align-items:center; gap:0.4em; }
+    #setGoogleTimerBtn:active, #setSamsungTimerBtn:active { background: #b3e0ff; }
+    .icon-wash { width: 32px; height: 32px; vertical-align: middle; margin-right: 0.5em; }
     @media (max-width: 500px) {
       .container { padding: 1em; }
       .icon-wash { width: 24px; height: 24px; }
@@ -100,28 +99,25 @@
         </div>
       </div>
       <div class="button-row">
-        <button type="submit" id="calcBtn" class="main-btn">🧮 Calculate</button>
-        <button type="reset" id="resetBtn" class="main-btn">🔄 Reset</button>
-        <button type="button" id="setTimerBtn" class="main-btn">🕰️ Set Finish Timer</button>
+        <button type="submit" id="calcBtn" class="main-btn">🧮<br>Calculate</button><>
+        <button type="reset" id="resetBtn" class="main-btn">🔄<br>Reset</button><br>
+        <button type="button" id="setGoogleTimerBtn" class="main-btn">🕰️<br>Google Clock</button>
+        <button type="button" id="setSamsungTimerBtn" class="main-btn">⏰<br>Samsung Clock</button>
       </div>
     </form>
     <div id="result" aria-live="polite"></div>
   </div>
   <script>
-    // Set default finish time to next rounded hour + 3
     function setDefaults() {
       const now = new Date();
       let h = now.getHours();
       let m = now.getMinutes();
-      // Next rounded hour
       let finishHour = m === 0 ? h : h + 1;
-      finishHour = (finishHour + 3) % 24; // Add 3 hours, wrap around 24
+      finishHour = (finishHour + 3) % 24;
       document.getElementById('finishHourTens').value = Math.floor(finishHour / 10);
       document.getElementById('finishHourOnes').value = finishHour % 10;
       document.getElementById('finishMinuteTens').value = 0;
       document.getElementById('finishMinuteOnes').value = 0;
-
-      // Default duration to 2:39
       document.getElementById('durationHourTens').value = 0;
       document.getElementById('durationHourOnes').value = 2;
       document.getElementById('durationMinuteTens').value = 3;
@@ -133,7 +129,6 @@
       calculateStartTime();
     };
 
-    // Timer settings list in minutes
     const timerSettings = [];
     for (let h = 0; h <= 10; h++) {
       if (h > 0) timerSettings.push(h * 60);
@@ -153,7 +148,6 @@
       return [hour, minute];
     }
 
-    // Debounce timer variable
     let debounceTimer = null;
 
     function debouncedCalculateStartTime() {
@@ -168,32 +162,17 @@
       let val = parseInt(input.value, 10);
       if (isNaN(val)) val = 0;
       val += delta;
-
-      // Define max and min per digit position
-      let max = 9;
-      let min = 0;
-
-      if (id.includes('HourTens')) {
-        max = 2;
-      }
+      let max = 9, min = 0;
+      if (id.includes('HourTens')) max = 2;
       if (id.includes('HourOnes')) {
-        // max depends on tens digit
         const tens = parseInt(document.getElementById(type + 'HourTens').value, 10);
         max = tens === 2 ? 3 : 9;
       }
-      if (id.includes('MinuteTens')) {
-        max = 5;
-      }
-      if (id.includes('MinuteOnes')) {
-        max = 9;
-      }
-
+      if (id.includes('MinuteTens')) max = 5;
+      if (id.includes('MinuteOnes')) max = 9;
       if (val > max) val = min;
       if (val < min) val = max;
-
       input.value = val;
-
-      // After changing hour tens, validate hour ones max
       if (id.includes('HourTens')) {
         const onesInput = document.getElementById(type + 'HourOnes');
         const tensVal = val;
@@ -202,67 +181,46 @@
           onesInput.value = 3;
         }
       }
-
-      // Debounced calculation
       debouncedCalculateStartTime();
     }
 
-    // Always show the timer button, default to 1 minute if invalid
-    function showSetTimerButton(minutes, finishTimeStr) {
-      const btn = document.getElementById('setTimerBtn');
-      btn.style.display = '';
-      btn.onclick = function() {
-        const label = encodeURIComponent("Washing machine done at " + finishTimeStr);
-        const timerMinutes = (minutes > 0) ? minutes : 1;
-        window.location.href =
-          `intent://timer/` +
-          `?minutes=${timerMinutes}&label=${label}` +
-          `#Intent;scheme=timer;package=com.google.android.deskclock;end`;
+    function setTimerButtons(minutes, finishTimeStr) {
+      // Google Clock app (will just open the app, not prefill timer)
+      document.getElementById('setGoogleTimerBtn').onclick = function() {
+        window.location.href = "intent://timer/#Intent;scheme=timer;package=com.google.android.deskclock;end";
+      };
+      // Samsung Clock app (will just open the app, not prefill timer)
+      document.getElementById('setSamsungTimerBtn').onclick = function() {
+        window.location.href = "intent://#Intent;package=com.sec.android.app.clockpackage;end";
       };
     }
 
     function calculateStartTime() {
       const resultDiv = document.getElementById('result');
       resultDiv.innerHTML = "";
-
-      // Get finish time and duration from digit controls
       const [finishHour, finishMinute] = getTimeFromDigits('finish');
       const [durHour, durMinute] = getTimeFromDigits('duration');
-
-      // Validate
       if ((finishHour > 23 || finishMinute > 59) || (durHour > 23 || durMinute > 59)) {
         resultDiv.innerHTML = "Please enter valid times.";
-        showSetTimerButton(1, "00:00");
+        setTimerButtons(1, "00:00");
         return;
       }
-
       const now = new Date();
       let finishDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), finishHour, finishMinute);
       if (finishDate < now) finishDate.setDate(finishDate.getDate() + 1);
-
       const durationMins = durHour * 60 + durMinute;
       const durationMs = durationMins * 60 * 1000;
-
-      // Calculate start time
       let startDate = new Date(finishDate.getTime() - durationMs);
-
-      // If start time has already passed, assume next day (add 24h)
       if (startDate < now) {
         startDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
       }
-
       let startHour = startDate.getHours().toString().padStart(2, '0');
       let startMinute = startDate.getMinutes().toString().padStart(2, '0');
-
-      // Calculate time until start
       let diffMs = startDate.getTime() - now.getTime();
       let diffMins = Math.round(diffMs / (1000 * 60));
       let diffHours = Math.floor(diffMins / 60);
       let diffMinutes = diffMins % 60;
-
       let exactStartIn = `${diffHours} hour(s) and ${diffMinutes} minute(s) from now`;
-
-      // Find largest timer setting <= diffMins (round down)
       let roundedDownSetting = null;
       for (let i = timerSettings.length - 1; i >= 0; i--) {
         if (timerSettings[i] <= diffMins) {
@@ -273,17 +231,14 @@
       let roundedDownStr = roundedDownSetting !== null
         ? `${Math.floor(roundedDownSetting/60)}:${pad(roundedDownSetting%60)}`
         : "No suitable timer setting";
-
       resultDiv.innerHTML =
         `<div><strong>Start the washing machine at:</strong> ${startHour}:${startMinute}</div>` +
         `<div><strong>Actual start in:</strong> ${exactStartIn}</div>` +
         `<div><strong>Closest round down timer setting:</strong> ${roundedDownStr}</div>`;
-
-      // Show the "Set Timer" button for finish time
       let finishDiffMs = finishDate.getTime() - now.getTime();
       let finishDiffMins = Math.round(finishDiffMs / (1000 * 60));
       let finishTimeStr = `${pad(finishHour)}:${pad(finishMinute)}`;
-      showSetTimerButton(finishDiffMins, finishTimeStr);
+      setTimerButtons(finishDiffMins, finishTimeStr);
     }
 
     document.getElementById('calcForm').addEventListener('reset', () => {
