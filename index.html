@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Washing Machine Start Time</title>
-  <!-- Washing machine icon for browser and Android home screen -->
   <link rel="icon" type="image/png" sizes="192x192" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f9fc.png">
   <link rel="apple-touch-icon" sizes="192x192" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f9fc.png">
   <meta name="theme-color" content="#eaf6ff">
@@ -27,9 +26,8 @@
     #calcBtn:active { background: #217dbb; }
     #resetBtn { background: #ccc; color: #222; }
     #resetBtn:active { background: #aaa; }
-    #setAlarmBtn { font-size: 1em; background: #eaf6ff; border: 1px solid #3498db; color: #217dbb; border-radius: 6px; padding: 0.5em 1em; cursor: pointer; display:inline-flex; align-items:center; gap:0.4em; }
-    #setAlarmBtn:active { background: #b3e0ff; }
     .icon-wash { width: 32px; height: 32px; vertical-align: middle; margin-right: 0.5em; }
+    .alarm-instructions { color: #666; font-size: 0.98em; margin-top: 1em; }
     @media (max-width: 500px) {
       .container { padding: 1em; }
       .icon-wash { width: 24px; height: 24px; }
@@ -101,10 +99,12 @@
       <div class="button-row">
         <button type="submit" id="calcBtn" class="main-btn">🧮 Calculate</button>
         <button type="reset" id="resetBtn" class="main-btn">🔄 Reset</button>
-        <button type="button" id="setAlarmBtn" class="main-btn">⏰ Set Alarm</button>
       </div>
     </form>
     <div id="result" aria-live="polite"></div>
+    <div class="alarm-instructions">
+      <b>Tip:</b> After calculating, set an alarm on your device for the finish time shown below.
+    </div>
   </div>
   <script>
     function setDefaults() {
@@ -183,16 +183,6 @@
       debouncedCalculateStartTime();
     }
 
-    function setAlarmButton(hour, minute, label) {
-      const btn = document.getElementById('setAlarmBtn');
-      btn.style.display = '';
-      btn.onclick = function() {
-        window.location.href =
-          `intent://com.android.alarmclock/alarm?hour=${hour}&minutes=${minute}&message=${encodeURIComponent(label)}` +
-          `#Intent;action=android.intent.action.SET_ALARM;end`;
-      };
-    }
-
     function calculateStartTime() {
       const resultDiv = document.getElementById('result');
       resultDiv.innerHTML = "";
@@ -200,7 +190,6 @@
       const [durHour, durMinute] = getTimeFromDigits('duration');
       if ((finishHour > 23 || finishMinute > 59) || (durHour > 23 || durMinute > 59)) {
         resultDiv.innerHTML = "Please enter valid times.";
-        setAlarmButton(0, 0, "Washing machine done");
         return;
       }
       const now = new Date();
@@ -229,11 +218,12 @@
       let roundedDownStr = roundedDownSetting !== null
         ? `${Math.floor(roundedDownSetting/60)}:${pad(roundedDownSetting%60)}`
         : "No suitable timer setting";
+      let finishTimeStr = `${pad(finishHour)}:${pad(finishMinute)}`;
       resultDiv.innerHTML =
         `<div><strong>Start the washing machine at:</strong> ${startHour}:${startMinute}</div>` +
         `<div><strong>Actual start in:</strong> ${exactStartIn}</div>` +
+        `<div><strong>Finish time:</strong> <span id="finishTimeCopy">${finishTimeStr}</span></div>` +
         `<div><strong>Closest round down timer setting:</strong> ${roundedDownStr}</div>`;
-      setAlarmButton(finishHour, finishMinute, "Washing machine done");
     }
 
     document.getElementById('calcForm').addEventListener('reset', () => {
