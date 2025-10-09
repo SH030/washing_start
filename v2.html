@@ -174,10 +174,12 @@
 
     ['finish', 'duration'].forEach(prefix => {
       ['HourTens', 'HourOnes'].forEach(suffix => {
-        document.getElementById(prefix + suffix).addEventListener('input', e => digitInputHandler(e, prefix, 'hour'));
+        const el = document.getElementById(prefix + suffix);
+        if (el) el.addEventListener('input', e => digitInputHandler(e, prefix, 'hour'));
       });
       ['MinuteTens', 'MinuteOnes'].forEach(suffix => {
-        document.getElementById(prefix + suffix).addEventListener('input', e => digitInputHandler(e, prefix, 'minute'));
+        const el = document.getElementById(prefix + suffix);
+        if (el) el.addEventListener('input', e => digitInputHandler(e, prefix, 'minute'));
       });
     });
 
@@ -186,8 +188,14 @@
       const solarUsed = document.getElementById('solarToggle').checked;
       const finishGroup = document.getElementById('finishTimeGroup');
       const cyclesInput = document.getElementById('cyclesInput');
+
       finishGroup.style.display = solarUsed ? 'none' : 'block';
       cyclesInput.style.display = solarUsed ? 'block' : 'none';
+
+      // Disable/enable inputs inside finishGroup for accessibility and interaction
+      const finishInputs = finishGroup.querySelectorAll('input, button');
+      finishInputs.forEach(el => el.disabled = solarUsed);
+
       calculateStartTime();
     }
 
@@ -233,9 +241,7 @@
         let finishDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), finishHour, finishMinute);
         if (finishDate < now) finishDate.setDate(finishDate.getDate() + 1);
         let startDate = new Date(finishDate.getTime() - durationMins * 60 * 1000);
-        if (startDate < now) {
-          startDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
-        }
+        if (startDate < now) startDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
         displayResult(startDate, now, durationMins);
 
       } else {
@@ -261,7 +267,7 @@
         }
       }
       let roundedDownStr = roundedDownSetting !== null
-        ? `${Math.floor(roundedDownSetting/60)}:${pad(roundedDownSetting%60)}`
+        ? `${Math.floor(roundedDownSetting / 60)}:${pad(roundedDownSetting % 60)}`
         : "No suitable timer setting";
 
       resultDiv.innerHTML =
@@ -357,7 +363,8 @@
       try {
         const [finishHour, finishMinute] = getTimeFromDigits('finish');
         const [durHour, durMinute] = getTimeFromDigits('duration');
-        const numCycles = parseInt(document.getElementById('numCycles').value, 10) || 1;
+        const numCyclesInput = document.getElementById('numCycles');
+        const numCycles = numCyclesInput ? parseInt(numCyclesInput.value, 10) : 1;
 
         if (finishHour > 23 || finishMinute > 59 || durHour > 23 || durMinute > 59 || numCycles < 1) {
           resultDiv.textContent = "Please enter valid times and number of cycles.";
@@ -399,7 +406,21 @@
 
     window.onload = function() {
       setDefaults();
-      toggleSolarUsage();
+
+      // Attach digit input listeners AFTER default UI setup
+      ['finish', 'duration'].forEach(prefix => {
+        ['HourTens', 'HourOnes'].forEach(suffix => {
+          const el = document.getElementById(prefix + suffix);
+          if (el) el.addEventListener('input', e => digitInputHandler(e, prefix, 'hour'));
+        });
+        ['MinuteTens', 'MinuteOnes'].forEach(suffix => {
+          const el = document.getElementById(prefix + suffix);
+          if (el) el.addEventListener('input', e => digitInputHandler(e, prefix, 'minute'));
+        });
+      });
+
+      // Delay toggleSolarUsage to ensure inputs are fully enabled once
+      setTimeout(toggleSolarUsage, 50);
     };
 
     document.getElementById('calcForm').addEventListener('reset', () => {
