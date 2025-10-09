@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Washing Machine Start Time with Solar Prediction</title>
+  <title>Washing Machine Start Time</title>
   <link rel="icon" type="image/png" sizes="192x192" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f9fc.png">
   <link rel="apple-touch-icon" sizes="192x192" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f9fc.png">
   <meta name="theme-color" content="#eaf6ff">
@@ -26,7 +26,6 @@
     #resetBtn { background: #ccc; color: #222; }
     #resetBtn:active { background: #aaa; }
     .icon-wash { width: 32px; height: 32px; vertical-align: middle; margin-right: 0.5em; }
-    #solarInfo { margin-top: 1em; font-size: 0.9em; color: #555; }
     @media (max-width: 500px) {
       .container { padding: 1em; }
       .icon-wash { width: 24px; height: 24px; }
@@ -37,7 +36,7 @@
   <div class="container" role="main">
     <h3>
       <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f9fc.png" alt="Washing Machine" class="icon-wash">
-      Washing Machine Start Time with Solar Prediction
+      Washing Machine Start Time
     </h3>
     <form id="calcForm" autocomplete="off" onsubmit="event.preventDefault(); calculateStartTime();">
       <div class="inputs-group">
@@ -49,6 +48,7 @@
             <button type="button" class="digit-btn" onclick="changeHour('finish', -1)">▼</button>
           </div>
           <div class="digit-control">
+            <!-- This input is only for display/edit, up/down handled by left digit's buttons -->
             <input id="finishHourOnes" class="digit" type="text" value="0" maxlength="1" inputmode="numeric" pattern="[0-9]*" />
           </div>
           <div class="colon">:</div>
@@ -86,13 +86,34 @@
       </div>
       <div class="button-row">
         <button type="submit" id="calcBtn" class="main-btn">🧮 Calculate</button>
+        <button type="button" id="predictBtn" class="main-btn">🔆 Predict Best Start Time</button>
         <button type="reset" id="resetBtn" class="main-btn">🔄 Reset</button>
       </div>
     </form>
-    <div id="solarInfo" aria-live="polite"></div>
     <div id="result" aria-live="polite"></div>
   </div>
   <script>
+    function setDefaults() {
+      const now = new Date();
+      let h = now.getHours();
+      let m = now.getMinutes();
+      let finishHour = m === 0 ? h : h + 1;
+      finishHour = (finishHour + 3) % 24;
+      document.getElementById('finishHourTens').value = Math.floor(finishHour / 10);
+      document.getElementById('finishHourOnes').value = finishHour % 10;
+      document.getElementById('finishMinuteTens').value = 0;
+      document.getElementById('finishMinuteOnes').value = 0;
+      document.getElementById('durationHourTens').value = 0;
+      document.getElementById('durationHourOnes').value = 2;
+      document.getElementById('durationMinuteTens').value = 3;
+      document.getElementById('durationMinuteOnes').value = 9;
+    }
+
+    window.onload = function() {
+      setDefaults();
+      calculateStartTime();
+    };
+
     const timerSettings = [];
     for (let h = 0; h <= 10; h++) {
       if (h > 0) timerSettings.push(h * 60);
@@ -122,7 +143,7 @@
       document.getElementById(prefix + 'MinuteOnes').value = minute % 10;
     }
 
-    // Hour and minute change handlers as before...
+    // Unified hour change for both up/down and direct edit
     function changeHour(prefix, delta) {
       let [hour, minute] = getTimeFromDigits(prefix);
       hour = (hour + delta + 24) % 24;
@@ -130,6 +151,7 @@
       calculateStartTime();
     }
 
+    // Unified minute change for both up/down and direct edit
     function changeMinute(prefix, delta) {
       let [hour, minute] = getTimeFromDigits(prefix);
       minute = (minute + delta + 60) % 60;
@@ -137,7 +159,7 @@
       calculateStartTime();
     }
 
-    // Handle digit direct editing validation
+    // Allow direct editing of digits, but keep valid hours/minutes
     function digitInputHandler(e, prefix, type) {
       let tensId = prefix + (type === 'hour' ? 'HourTens' : 'MinuteTens');
       let onesId = prefix + (type === 'hour' ? 'HourOnes' : 'MinuteOnes');
@@ -158,6 +180,7 @@
       calculateStartTime();
     }
 
+    // Attach input listeners for all digit fields
     ['finish', 'duration'].forEach(prefix => {
       ['HourTens', 'HourOnes'].forEach(suffix => {
         document.getElementById(prefix + suffix).addEventListener('input', e => digitInputHandler(e, prefix, 'hour'));
@@ -167,34 +190,13 @@
       });
     });
 
-    // Stub function to simulate solar forecast API call - replace with real API call here
-    async function fetchSolarForecast() {
-      // Simulated solar forecast data with hours (0-23) and predicted solar power kW
-      return new Promise(resolve => {
-        setTimeout(() => {
-          resolve([
-            { hour: 9, power: 0.2 },
-            { hour: 10, power: 0.5 },
-            { hour: 11, power: 0.9 },
-            { hour: 12, power: 1.2 },
-            { hour: 13, power: 1.1 },
-            { hour: 14, power: 0.8 },
-            { hour: 15, power: 0.3 }
-          ]);
-        }, 500); // simulate 500ms delay
-      });
-    }
-
-    async function calculateStartTime() {
+    function calculateStartTime() {
       const resultDiv = document.getElementById('result');
-      const solarInfoDiv = document.getElementById('solarInfo');
       resultDiv.innerHTML = "";
-      solarInfoDiv.innerHTML = "Loading solar forecast...";
       const [finishHour, finishMinute] = getTimeFromDigits('finish');
       const [durHour, durMinute] = getTimeFromDigits('duration');
       if ((finishHour > 23 || finishMinute > 59) || (durHour > 23 || durMinute > 59)) {
         resultDiv.innerHTML = "Please enter valid times.";
-        solarInfoDiv.innerHTML = "";
         return;
       }
       const now = new Date();
@@ -202,108 +204,253 @@
       if (finishDate < now) finishDate.setDate(finishDate.getDate() + 1);
       const durationMins = durHour * 60 + durMinute;
       const durationMs = durationMins * 60 * 1000;
-
-      // Fetch solar forecast data
-      let solarForecast;
-      try {
-        solarForecast = await fetchSolarForecast();
-      } catch (e) {
-        solarInfoDiv.innerHTML = "Failed to load solar forecast.";
-        solarForecast = [];
+      let startDate = new Date(finishDate.getTime() - durationMs);
+      if (startDate < now) {
+        startDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
       }
-
-      if (solarForecast.length === 0) {
-        solarInfoDiv.innerHTML = "No solar forecast data available.";
-      } else {
-        // Find peak solar hour range in forecast for better start time decision
-        const peakHours = solarForecast.filter(d => d.power >= 0.8).map(d => d.hour);
-
-        solarInfoDiv.innerHTML = 
-          `Solar forecast loaded. Peak solar hours: ${peakHours.join(', ')} (approx).`;
-
-        // Adjust start time to match a peak solar window if possible
-        // Prefer start time within peakHours to maximize solar use
-        
-        // Compute naive standard start time (finish - duration)
-        let startDate = new Date(finishDate.getTime() - durationMs);
-
-        // If start time not on peak hour, adjust it to the closest earlier peak hour block if possible
-        // Consider the hour portion of startDate rounded down
-        let startHourCandidate = startDate.getHours();
-        let adjusted = false;
-        for (let offset = 0; offset <= durationMins/60; offset++) {
-          // Check if starting offset hours before finish falls within peak hours:
-          let candidateHour = (finishDate.getHours() - offset + 24) % 24;
-          if (peakHours.includes(candidateHour)) {
-            // Adjust start time to candidateHour with same minute
-            startDate.setHours(candidateHour);
-            adjusted = true;
-            break;
-          }
+      let startHour = startDate.getHours().toString().padStart(2, '0');
+      let startMinute = startDate.getMinutes().toString().padStart(2, '0');
+      let diffMs = startDate.getTime() - now.getTime();
+      let diffMins = Math.round(diffMs / (1000 * 60));
+      let diffHours = Math.floor(diffMins / 60);
+      let diffMinutes = diffMins % 60;
+      let exactStartIn = `${diffHours} hour(s) and ${diffMinutes} minute(s) from now`;
+      let roundedDownSetting = null;
+      for (let i = timerSettings.length - 1; i >= 0; i--) {
+        if (timerSettings[i] <= diffMins) {
+          roundedDownSetting = timerSettings[i];
+          break;
         }
-        if (!adjusted) {
-          // fallback: keep original startDate
-        }
-
-        // If adjusted startDate is before now, push by 24 hours
-        if (startDate < now) startDate = new Date(startDate.getTime() + 24 * 3600000);
-
-        let startHour = startDate.getHours().toString().padStart(2, '0');
-        let startMinute = startDate.getMinutes().toString().padStart(2, '0');
-
-        // Calculate minutes difference from now for timer rounding
-        let diffMs = startDate.getTime() - now.getTime();
-        let diffMins = Math.round(diffMs / 60000);
-        let diffHours = Math.floor(diffMins / 60);
-        let diffRemainingMins = diffMins % 60;
-        let exactStartIn = `${diffHours} hour(s) and ${diffRemainingMins} minute(s) from now`;
-
-        let roundedDownSetting = null;
-        for (let i = timerSettings.length - 1; i >= 0; i--) {
-          if (timerSettings[i] <= diffMins) {
-            roundedDownSetting = timerSettings[i];
-            break;
-          }
-        }
-        let roundedDownStr = roundedDownSetting !== null
-          ? `${Math.floor(roundedDownSetting/60)}:${pad(roundedDownSetting%60)}`
-          : "No suitable timer setting";
-
-        resultDiv.innerHTML =
-          `<div>Closest round down timer setting:</div>` +
-          `<h2>${roundedDownStr}</h2>` +
-          `<div><strong>Start the washing machine at:</strong> ${startHour}:${startMinute}</div>` +
-          `<div><strong>Actual start in:</strong> ${exactStartIn}</div>`;
       }
+      let roundedDownStr = roundedDownSetting !== null
+        ? `${Math.floor(roundedDownSetting/60)}:${pad(roundedDownSetting%60)}`
+        : "No suitable timer setting";
+      resultDiv.innerHTML =
+        `<div>Closest round down timer setting:</div>` +
+        `<h2>${roundedDownStr}</h2>` +
+        `<div><strong>Start the washing machine at:</strong> ${startHour}:${startMinute}</div>` +
+        `<div><strong>Actual start in:</strong> ${exactStartIn}</div>`;
     }
+    // Fetch forecast CSV from Google Sheet, parse, and return data array
+async function fetchForecastFromSheet() {
+  const spreadsheetId = "1Aq9wucNZ5Izzxf5UQ1vKRIm19Ut5h_FRwUufZSnqIbw";  // Replace with your ID
+  const sheetGid = "900300745";            // Replace with 'Solar prediction' GID
+  const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${sheetGid}`;
 
-    function setDefaults() {
-      const now = new Date();
-      let h = now.getHours();
-      let m = now.getMinutes();
-      let finishHour = m === 0 ? h : h + 1;
-      finishHour = (finishHour + 3) % 24;
-      document.getElementById('finishHourTens').value = Math.floor(finishHour / 10);
-      document.getElementById('finishHourOnes').value = finishHour % 10;
-      document.getElementById('finishMinuteTens').value = 0;
-      document.getElementById('finishMinuteOnes').value = 0;
-      document.getElementById('durationHourTens').value = 0;
-      document.getElementById('durationHourOnes').value = 2;
-      document.getElementById('durationMinuteTens').value = 3;
-      document.getElementById('durationMinuteOnes').value = 9;
-    }
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Failed to fetch sheet data");
+  const csvText = await response.text();
 
-    window.onload = function() {
-      setDefaults();
-      calculateStartTime();
+  const rows = csvText.trim().split('\n').slice(1); // skip header row
+  return rows.map(row => {
+    const [timestamp, pvEstimate] = row.split(',');
+    return {
+      time: new Date(timestamp),
+      pvEstimate: parseFloat(pvEstimate)
     };
+  });
+}
+
+// Calculate best start time to maximize solar power within ±2 hour window around calculated start
+async function predictBestStartTime(finishDate, durationMinutes) {
+  const forecastData = await fetchForecastFromSheet();
+
+  const finishTimestamp = finishDate.getTime();
+  const durationMs = durationMinutes * 60 * 1000;
+  const startTimestamp = finishTimestamp - durationMs;
+
+  const windowMs = 2 * 60 * 60 * 1000;
+  let bestStart = startTimestamp;
+  let maxPv = -1;
+
+  forecastData.forEach(({ time, pvEstimate }) => {
+    const t = time.getTime();
+    if (t >= startTimestamp - windowMs && t <= startTimestamp + windowMs) {
+      if (pvEstimate > maxPv) {
+        maxPv = pvEstimate;
+        bestStart = t;
+      }
+    }
+  });
+  return new Date(bestStart);
+}
+
+// On button click, calculate prediction and update UI
+document.getElementById('predictBtn').addEventListener('click', async () => {
+  const resultDiv = document.getElementById('result');
+  resultDiv.textContent = "Calculating best start time based on solar forecast...";
+  
+  try {
+    const [finishHour, finishMinute] = getTimeFromDigits('finish');
+    const [durHour, durMinute] = getTimeFromDigits('duration');
+
+    if (finishHour > 23 || finishMinute > 59 || durHour > 23 || durMinute > 59) {
+      resultDiv.textContent = "Please enter valid times.";
+      return;
+    }
+
+    const now = new Date();
+    let finishDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), finishHour, finishMinute);
+    if (finishDate < now) finishDate.setDate(finishDate.getDate() + 1);
+
+    const durationMinutes = durHour * 60 + durMinute;
+    const predictedStart = await predictBestStartTime(finishDate, durationMinutes);
+
+    let startHour = predictedStart.getHours().toString().padStart(2, '0');
+    let startMinute = predictedStart.getMinutes().toString().padStart(2, '0');
+
+    let diffMs = predictedStart.getTime() - now.getTime();
+    let diffMins = Math.round(diffMs / (1000 * 60));
+    let diffHours = Math.floor(diffMins / 60);
+    let diffRemainingMins = diffMins % 60;
+
+    resultDiv.innerHTML =
+      `<div>Recommended washing machine start time:</div>` +
+      `<h2>${startHour}:${startMinute}</h2>` +
+      `<div>Starting in approximately ${diffHours} hour(s) and ${diffRemainingMins} minute(s) from now.</div>`;
+  } catch (error) {
+    resultDiv.textContent = "Error calculating prediction: " + error.message;
+  }
+});
+
 
     document.getElementById('calcForm').addEventListener('reset', () => {
       setTimeout(() => {
         setDefaults();
         calculateStartTime();
         document.getElementById('result').innerHTML = "";
-        document.getElementById('solarInfo').innerHTML = "";
+      }, 50);
+    });
+  </script>
+</body>
+</html>
+      setDefaults();
+      calculateStartTime();
+    };
+
+    const timerSettings = [];
+    for (let h = 0; h <= 10; h++) {
+      if (h > 0) timerSettings.push(h * 60);
+      if (h < 10) timerSettings.push(h * 60 + 30);
+    }
+    for (let h = 11; h <= 24; h++) {
+      timerSettings.push(h * 60);
+    }
+
+    function pad(n) { return n.toString().padStart(2, '0'); }
+
+    function getTimeFromDigits(prefix) {
+      const hour = parseInt(document.getElementById(prefix + 'HourTens').value, 10) * 10 +
+                   parseInt(document.getElementById(prefix + 'HourOnes').value, 10);
+      const minute = parseInt(document.getElementById(prefix + 'MinuteTens').value, 10) * 10 +
+                     parseInt(document.getElementById(prefix + 'MinuteOnes').value, 10);
+      return [hour, minute];
+    }
+
+    function setHourDigits(prefix, hour) {
+      document.getElementById(prefix + 'HourTens').value = Math.floor(hour / 10);
+      document.getElementById(prefix + 'HourOnes').value = hour % 10;
+    }
+
+    function setMinuteDigits(prefix, minute) {
+      document.getElementById(prefix + 'MinuteTens').value = Math.floor(minute / 10);
+      document.getElementById(prefix + 'MinuteOnes').value = minute % 10;
+    }
+
+    // Unified hour change for both up/down and direct edit
+    function changeHour(prefix, delta) {
+      let [hour, minute] = getTimeFromDigits(prefix);
+      hour = (hour + delta + 24) % 24;
+      setHourDigits(prefix, hour);
+      calculateStartTime();
+    }
+
+    // Unified minute change for both up/down and direct edit
+    function changeMinute(prefix, delta) {
+      let [hour, minute] = getTimeFromDigits(prefix);
+      minute = (minute + delta + 60) % 60;
+      setMinuteDigits(prefix, minute);
+      calculateStartTime();
+    }
+
+    // Allow direct editing of digits, but keep valid hours/minutes
+    function digitInputHandler(e, prefix, type) {
+      let tensId = prefix + (type === 'hour' ? 'HourTens' : 'MinuteTens');
+      let onesId = prefix + (type === 'hour' ? 'HourOnes' : 'MinuteOnes');
+      let tens = parseInt(document.getElementById(tensId).value, 10);
+      let ones = parseInt(document.getElementById(onesId).value, 10);
+      if (isNaN(tens)) tens = 0;
+      if (isNaN(ones)) ones = 0;
+      let value = tens * 10 + ones;
+      if (type === 'hour') {
+        if (value > 23) value = 23;
+        if (value < 0) value = 0;
+        setHourDigits(prefix, value);
+      } else {
+        if (value > 59) value = 59;
+        if (value < 0) value = 0;
+        setMinuteDigits(prefix, value);
+      }
+      calculateStartTime();
+    }
+
+    // Attach input listeners for all digit fields
+    ['finish', 'duration'].forEach(prefix => {
+      ['HourTens', 'HourOnes'].forEach(suffix => {
+        document.getElementById(prefix + suffix).addEventListener('input', e => digitInputHandler(e, prefix, 'hour'));
+      });
+      ['MinuteTens', 'MinuteOnes'].forEach(suffix => {
+        document.getElementById(prefix + suffix).addEventListener('input', e => digitInputHandler(e, prefix, 'minute'));
+      });
+    });
+
+    function calculateStartTime() {
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = "";
+      const [finishHour, finishMinute] = getTimeFromDigits('finish');
+      const [durHour, durMinute] = getTimeFromDigits('duration');
+      if ((finishHour > 23 || finishMinute > 59) || (durHour > 23 || durMinute > 59)) {
+        resultDiv.innerHTML = "Please enter valid times.";
+        return;
+      }
+      const now = new Date();
+      let finishDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), finishHour, finishMinute);
+      if (finishDate < now) finishDate.setDate(finishDate.getDate() + 1);
+      const durationMins = durHour * 60 + durMinute;
+      const durationMs = durationMins * 60 * 1000;
+      let startDate = new Date(finishDate.getTime() - durationMs);
+      if (startDate < now) {
+        startDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
+      }
+      let startHour = startDate.getHours().toString().padStart(2, '0');
+      let startMinute = startDate.getMinutes().toString().padStart(2, '0');
+      let diffMs = startDate.getTime() - now.getTime();
+      let diffMins = Math.round(diffMs / (1000 * 60));
+      let diffHours = Math.floor(diffMins / 60);
+      let diffMinutes = diffMins % 60;
+      let exactStartIn = `${diffHours} hour(s) and ${diffMinutes} minute(s) from now`;
+      let roundedDownSetting = null;
+      for (let i = timerSettings.length - 1; i >= 0; i--) {
+        if (timerSettings[i] <= diffMins) {
+          roundedDownSetting = timerSettings[i];
+          break;
+        }
+      }
+      let roundedDownStr = roundedDownSetting !== null
+        ? `${Math.floor(roundedDownSetting/60)}:${pad(roundedDownSetting%60)}`
+        : "No suitable timer setting";
+      resultDiv.innerHTML =
+        `<div>Closest round down timer setting:</div>` +
+        `<h2>${roundedDownStr}</h2>` +
+        `<div><strong>Start the washing machine at:</strong> ${startHour}:${startMinute}</div>` +
+        `<div><strong>Actual start in:</strong> ${exactStartIn}</div>`;
+    }
+
+    document.getElementById('calcForm').addEventListener('reset', () => {
+      setTimeout(() => {
+        setDefaults();
+        calculateStartTime();
+        document.getElementById('result').innerHTML = "";
       }, 50);
     });
   </script>
