@@ -7,7 +7,6 @@
 <link rel="icon" type="image/png" sizes="192x192" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f9fc.png" />
 <meta name="theme-color" content="#eaf6ff" />
 <style>
-  /* [Same styling as previous version, omitted for brevity] */
   body { font-family: sans-serif; margin: 1em; background: #f9f9f9; }
   .container { max-width: 470px; margin: auto; background: #fff; padding: 2em; border-radius: 12px; box-shadow: 0 2px 8px #0001; }
   label { display: block; margin-top: 1em; font-weight: 500; }
@@ -71,7 +70,6 @@ function setDefaults() {
   setMinuteDigits('finish', 0);
   setHourDigits('duration', 2);
   setMinuteDigits('duration', 39);
-  document.getElementById('numCycles').value = '1';
 }
 function changeHour(prefix, delta) {
   let [hour, ] = getTimeFromDigits(prefix);
@@ -109,6 +107,10 @@ function toggleSolarUsage() {
   document.getElementById('finishTimeGroup').style.display = solarUsed ? 'none' : 'block';
   document.getElementById('cyclesInput').style.display = solarUsed ? 'block' : 'none';
   Array.from(document.querySelectorAll('#finishTimeGroup input,#finishTimeGroup button')).forEach(el => el.disabled = solarUsed);
+  // Now, after toggle, if solar is enabled, set default cycles value (fix null error)
+  if(solarUsed){
+    document.getElementById('numCycles').value = '1';
+  }
   calculateStartTime();
 }
 function changeCycle(delta) {
@@ -180,11 +182,9 @@ function calculateStartTime() {
     resultDiv.innerHTML = "Solar prediction is active. Use the 🔆 Predict Best Start Times button.";
   }
 }
-
-// --- Solar Forecast Logic ---
 async function fetchForecastFromSheet() {
-  const spreadsheetId = "1Aq9wucNZ5Izzxf5UQ1vKRIm19Ut5h_FRwUufZSnqIbw";// your sheet id
-  const sheetGid = "900300745";// your sheet gid
+  const spreadsheetId = "1Aq9wucNZ5Izzxf5UQ1vKRIm19Ut5h_FRwUufZSnqIbw";
+  const sheetGid = "900300745";
   const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${sheetGid}`;
   const response = await fetch(url);
   if (!response.ok) throw new Error("Failed to fetch sheet data");
@@ -198,7 +198,6 @@ async function fetchForecastFromSheet() {
     };
   });
 }
-
 async function predictBestStartTimesHandler() {
   console.log("Predict button clicked");
   const resultDiv = document.getElementById('result');
@@ -216,8 +215,6 @@ async function predictBestStartTimesHandler() {
     const durationMinutes = durHour * 60 + durMinute;
     const now = new Date();
     let bestStarts = await predictBestStartTimes(durationMinutes, numCycles, now);
-
-    // PRIORITIZE TODAY start times first
     const todayStarts = bestStarts.filter(({ time }) => {
       const diffDays = Math.floor((time.getTime() - now.getTime()) / (24 * 3600 * 1000));
       return diffDays === 0;
@@ -226,29 +223,23 @@ async function predictBestStartTimesHandler() {
       const diffDays = Math.floor((time.getTime() - now.getTime()) / (24 * 3600 * 1000));
       return diffDays > 0;
     });
-
     if (todayStarts.length < numCycles) {
       bestStarts = todayStarts.concat(tomorrowStarts).slice(0, numCycles);
     } else {
       bestStarts = todayStarts.slice(0, numCycles);
     }
-
     if (!bestStarts || bestStarts.length === 0) {
       resultDiv.textContent = "No suitable start times found in the next 48 hours.";
       console.log("No start times found");
       return;
     }
-
-    let output = `Recommended start times for ${numCycles} cycle(s):
-
-`;
+    let output = `Recommended start times for ${numCycles} cycle(s):\n\n`;
     bestStarts.forEach(({ time, pvTotal }, i) => {
       let startHour = time.getHours().toString().padStart(2, '0');
       let startMinute = time.getMinutes().toString().padStart(2, '0');
       const dayDiff = Math.floor((time.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
       const dayLabel = dayDiff === 0 ? "today" : "tomorrow";
-      output += `${i + 1}. ${startHour}:${startMinute} (${dayLabel}) - Estimated solar PV: ${pvTotal.toFixed(2)} kW
-`;
+      output += `${i + 1}. ${startHour}:${startMinute} (${dayLabel}) - Estimated solar PV: ${pvTotal.toFixed(2)} kW\n`;
     });
     resultDiv.textContent = output;
     console.log("Prediction complete", bestStarts);
@@ -257,12 +248,11 @@ async function predictBestStartTimesHandler() {
     console.error("Prediction error: ", error);
   }
 }
-
 async function predictBestStartTimes(durationMinutes, numCycles, referenceTime) {
   const forecastData = await fetchForecastFromSheet();
   const durationMs = durationMinutes * 60 * 1000;
   const startSearch = referenceTime.getTime();
-  const endSearch = startSearch + 48 * 60 * 60 * 1000; // 48 hours
+  const endSearch = startSearch + 48 * 60 * 60 * 1000; // 48 hours window
   const candidateStarts = [];
   for (let t = startSearch; t <= endSearch - durationMs; t += 15 * 60 * 1000) {
     candidateStarts.push(new Date(t));
@@ -279,9 +269,7 @@ async function predictBestStartTimes(durationMinutes, numCycles, referenceTime) 
     return totalPV;
   }
   const candidates = candidateStarts.map(dt => ({ time: dt, pvTotal: solarInWindow(dt.getTime()) }));
-  // Sort descending by solar PV
   candidates.sort((a, b) => b.pvTotal - a.pvTotal);
-
   const scheduled = [];
   for (const candidate of candidates) {
     if (scheduled.length >= numCycles) break;
@@ -302,7 +290,6 @@ async function predictBestStartTimes(durationMinutes, numCycles, referenceTime) 
   }
   return scheduled;
 }
-
 function attachListeners() {
   document.getElementById('finishHourUp').onclick = () => changeHour('finish', 1);
   document.getElementById('finishHourDown').onclick = () => changeHour('finish', -1);
@@ -339,5 +326,77 @@ document.addEventListener('DOMContentLoaded', function() {
   toggleSolarUsage();
 });
 </script>
+<div class="container" role="main">
+  <h3>
+    <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f9fc.png" alt="Washing Machine" class="icon-wash" />
+    Washing Machine Start Time - Prioritized & Explained
+  </h3>
+  <form id="calcForm" autocomplete="off">
+    <label>
+      <input type="checkbox" id="solarToggle" />
+      Use Solar Prediction
+    </label>
+    <div class="inputs-group" id="finishTimeGroup">
+      <label for="finishHourTens">Desired Finish Time:</label>
+      <div class="time-input" id="finishTimeInput">
+        <div class="digit-control">
+          <button type="button" class="digit-btn" id="finishHourUp">▲</button>
+          <input id="finishHourTens" class="digit" maxlength="1" inputmode="numeric" pattern="[0-9]*" />
+          <button type="button" class="digit-btn" id="finishHourDown">▼</button>
+        </div>
+        <div class="digit-control">
+          <input id="finishHourOnes" class="digit" maxlength="1" inputmode="numeric" pattern="[0-9]*" />
+        </div>
+        <div class="colon">:</div>
+        <div class="digit-control">
+          <button type="button" class="digit-btn" id="finishMinuteUp">▲</button>
+          <input id="finishMinuteTens" class="digit" maxlength="1" inputmode="numeric" pattern="[0-9]*" />
+          <button type="button" class="digit-btn" id="finishMinuteDown">▼</button>
+        </div>
+        <div class="digit-control">
+          <input id="finishMinuteOnes" class="digit" maxlength="1" inputmode="numeric" pattern="[0-9]*" />
+        </div>
+      </div>
+    </div>
+    <div class="inputs-group" id="durationInput">
+      <label for="durationHourTens">Washing Program Duration:</label>
+      <div class="time-input" id="durationTimeInput">
+        <div class="digit-control">
+          <button type="button" class="digit-btn" id="durationHourUp">▲</button>
+          <input id="durationHourTens" class="digit" maxlength="1" inputmode="numeric" pattern="[0-9]*" />
+          <button type="button" class="digit-btn" id="durationHourDown">▼</button>
+        </div>
+        <div class="digit-control">
+          <input id="durationHourOnes" class="digit" maxlength="1" inputmode="numeric" pattern="[0-9]*" />
+        </div>
+        <div class="colon">:</div>
+        <div class="digit-control">
+          <button type="button" class="digit-btn" id="durationMinuteUp">▲</button>
+          <input id="durationMinuteTens" class="digit" maxlength="1" inputmode="numeric" pattern="[0-9]*" />
+          <button type="button" class="digit-btn" id="durationMinuteDown">▼</button>
+        </div>
+        <div class="digit-control">
+          <input id="durationMinuteOnes" class="digit" maxlength="1" inputmode="numeric" pattern="[0-9]*" />
+        </div>
+      </div>
+    </div>
+    <div class="inputs-group" id="cyclesInput" style="display:none;">
+      <label for="numCycles">Number of washing cycles:</label>
+      <div class="time-input" id="cyclesTimeInput">
+        <div class="digit-control">
+          <button type="button" class="digit-btn" id="numCyclesUp">▲</button>
+          <input id="numCycles" class="digit number-input" maxlength="2" inputmode="numeric" value="1" pattern="[0-9]*" />
+          <button type="button" class="digit-btn" id="numCyclesDown">▼</button>
+        </div>
+      </div>
+    </div>
+    <div class="button-row">
+      <button type="button" id="calcBtn" class="main-btn">🧮 Calculate</button>
+      <button type="button" id="predictBtn" class="main-btn">🔆 Predict Best Start Times</button>
+      <button type="reset" id="resetBtn" class="main-btn">🔄 Reset</button>
+    </div>
+  </form>
+  <div id="result" aria-live="polite"></div>
+</div>
 </body>
 </html>
