@@ -1,10 +1,9 @@
-<!-- Begin HTML file -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Washing Machine Start Time</title>
+  <title>Washing Machine Start Time - Debug Version</title>
   <link rel="icon" type="image/png" sizes="192x192" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f9fc.png">
   <meta name="theme-color" content="#eaf6ff">
   <style>
@@ -37,10 +36,22 @@
   </style>
 </head>
 <body>
+<!-- Load Eruda early for full capture -->
+<script src="//cdn.jsdelivr.net/npm/eruda"></script>
+<script>eruda.init();</script>
+
+<script>
+  // Global error catcher — alerts and logs errors, so visible on mobile
+  window.onerror = function(message, source, lineno, colno, error) {
+    console.error('Global error caught:', message, source, lineno, colno, error);
+    alert(`Error: ${message} at ${source}:${lineno}:${colno}`);
+  };
+</script>
+
 <div class="container" role="main">
   <h3>
     <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f9fc.png" alt="Washing Machine" class="icon-wash">
-    Washing Machine Start Time
+    Washing Machine Start Time - Debug
   </h3>
   <form id="calcForm" autocomplete="off">
     <label>
@@ -103,6 +114,7 @@
   </form>
   <div id="result" aria-live="polite"></div>
 </div>
+
 <script>
 function pad(n) { return n.toString().padStart(2, '0'); }
 function setHourDigits(prefix, hour) {
@@ -213,11 +225,10 @@ function calculateStartTime() {
     resultDiv.innerHTML = "Solar prediction is active. Use the 🔆 Predict Best Start Times button.";
   }
 }
-
 // --- Solar Forecast Logic ---
 async function fetchForecastFromSheet() {
-  const spreadsheetId = "1Aq9wucNZ5Izzxf5UQ1vKRIm19Ut5h_FRwUufZSnqIbw";
-  const sheetGid = "900300745";
+  const spreadsheetId = "1Aq9wucNZ5Izzxf5UQ1vKRIm19Ut5h_FRwUufZSnqIbw";// your sheet id
+  const sheetGid = "900300745";// your sheet gid
   const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${sheetGid}`;
   const response = await fetch(url);
   if (!response.ok) throw new Error("Failed to fetch sheet data");
@@ -232,8 +243,8 @@ async function fetchForecastFromSheet() {
     };
   });
 }
-
 async function predictBestStartTimesHandler() {
+  console.log("Predict button clicked");
   const resultDiv = document.getElementById('result');
   resultDiv.textContent = "Calculating best start times based on solar forecast...";
   try {
@@ -241,22 +252,15 @@ async function predictBestStartTimesHandler() {
     const numCycles = parseInt(document.getElementById('numCycles').value, 10) || 1;
     if (durHour > 23 || durMinute > 59 || numCycles < 1) {
       resultDiv.textContent = "Please enter valid times and number of cycles.";
+      console.log("Invalid input");
       return;
     }
     const durationMinutes = durHour * 60 + durMinute;
     const now = new Date();
-
-    // Fetch and validate forecast data
-    let bestStarts = [];
-    try {
-      bestStarts = await predictBestStartTimes(durationMinutes, numCycles, now);
-    } catch (err) {
-      resultDiv.textContent = "Error fetching solar data: " + err.message;
-      return;
-    }
-
+    const bestStarts = await predictBestStartTimes(durationMinutes, numCycles, now);
     if (!bestStarts || bestStarts.length === 0) {
-      resultDiv.textContent = "No suitable start times found in the next 24 hours. (No data or insufficient solar production)";
+      resultDiv.textContent = "No suitable start times found in the next 24 hours.";
+      console.log("No start times found");
       return;
     }
     let output = `Recommended start times for ${numCycles} cycle(s):
@@ -265,19 +269,16 @@ async function predictBestStartTimesHandler() {
     bestStarts.forEach(({ time }, i) => {
       let startHour = time.getHours().toString().padStart(2, '0');
       let startMinute = time.getMinutes().toString().padStart(2, '0');
-      let diffMs = time.getTime() - now.getTime();
-      let diffMins = Math.round(diffMs / (1000 * 60));
-      let diffHours = Math.floor(diffMins / 60);
-      let diffRemainingMins = diffMins % 60;
-      output += `${i + 1}. ${startHour}:${startMinute} (in approx. ${diffHours}h ${diffRemainingMins}m)
+      output += `${i + 1}. ${startHour}:${startMinute}
 `;
     });
     resultDiv.textContent = output;
+    console.log("Prediction complete", bestStarts);
   } catch (error) {
-    resultDiv.textContent = "Unexpected error: " + error.message;
+    resultDiv.textContent = "Error calculating prediction: " + error.message;
+    console.error("Prediction error: ", error);
   }
 }
-
 async function predictBestStartTimes(durationMinutes, numCycles, referenceTime) {
   const forecastData = await fetchForecastFromSheet();
   const durationMs = durationMinutes * 60 * 1000;
@@ -320,7 +321,6 @@ async function predictBestStartTimes(durationMinutes, numCycles, referenceTime) 
   }
   return scheduled;
 }
-
 function attachListeners() {
   document.getElementById('finishHourUp').onclick = () => changeHour('finish', 1);
   document.getElementById('finishHourDown').onclick = () => changeHour('finish', -1);
@@ -353,16 +353,6 @@ document.addEventListener('DOMContentLoaded', function() {
   attachListeners();
   toggleSolarUsage();
 });
-</script>
-<script>
-  (function () {
-    var script = document.createElement('script');
-    script.src = "//cdn.jsdelivr.net/npm/eruda";
-    document.body.appendChild(script);
-    script.onload = function () {
-      eruda.init();
-    };
-  })();
 </script>
 </body>
 </html>
