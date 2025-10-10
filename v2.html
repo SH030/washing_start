@@ -245,9 +245,18 @@ async function predictBestStartTimesHandler() {
     }
     const durationMinutes = durHour * 60 + durMinute;
     const now = new Date();
-    const bestStarts = await predictBestStartTimes(durationMinutes, numCycles, now);
-    if (bestStarts.length === 0) {
-      resultDiv.textContent = "No suitable start times found in the next 24 hours.";
+
+    // Fetch and validate forecast data
+    let bestStarts = [];
+    try {
+      bestStarts = await predictBestStartTimes(durationMinutes, numCycles, now);
+    } catch (err) {
+      resultDiv.textContent = "Error fetching solar data: " + err.message;
+      return;
+    }
+
+    if (!bestStarts || bestStarts.length === 0) {
+      resultDiv.textContent = "No suitable start times found in the next 24 hours. (No data or insufficient solar production)";
       return;
     }
     let output = `Recommended start times for ${numCycles} cycle(s):
@@ -265,7 +274,7 @@ async function predictBestStartTimesHandler() {
     });
     resultDiv.textContent = output;
   } catch (error) {
-    resultDiv.textContent = "Error calculating prediction: " + error.message;
+    resultDiv.textContent = "Unexpected error: " + error.message;
   }
 }
 
