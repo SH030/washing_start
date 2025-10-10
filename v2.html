@@ -267,8 +267,7 @@ window.onerror = function(message, source, lineno, colno, error) {
     const response = await fetch(url);
     if (!response.ok) throw new Error("Failed to fetch sheet data");
     const csvText = await response.text();
-    const rows = csvText.trim().split('
-').slice(1);
+    const rows = csvText.trim().split('\n').slice(1);
     return rows.map(row => {
       const [timestamp, pvEstimate] = row.split(',');
       return {
