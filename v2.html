@@ -68,7 +68,6 @@
         </div>
       </div>
     </div>
-
     <div class="inputs-group" id="durationInput">
       <label for="durationHourTens">Washing Program Duration:</label>
       <div class="time-input" id="durationTimeInput">
@@ -91,12 +90,10 @@
         </div>
       </div>
     </div>
-
     <div class="inputs-group" id="cyclesInput" style="display:none;">
       <label for="numCycles">Number of washing cycles:</label>
       <input id="numCycles" class="number-input" type="number" min="1" max="10" value="1" />
     </div>
-
     <div class="button-row">
       <button type="button" id="calcBtn" class="main-btn">🧮 Calculate</button>
       <button type="button" id="predictBtn" class="main-btn">🔆 Predict Best Start Times</button>
@@ -107,7 +104,6 @@
 </div>
 <script>
 function pad(n) { return n.toString().padStart(2, '0'); }
-
 function setHourDigits(prefix, hour) {
   document.getElementById(prefix + 'HourTens').value = String(Math.floor(hour / 10));
   document.getElementById(prefix + 'HourOnes').value = String(hour % 10);
@@ -168,7 +164,6 @@ function toggleSolarUsage() {
   const solarUsed = document.getElementById('solarToggle').checked;
   document.getElementById('finishTimeGroup').style.display = solarUsed ? 'none' : 'block';
   document.getElementById('cyclesInput').style.display = solarUsed ? 'block' : 'none';
-  // Disable/hide finish inputs for accessibility
   Array.from(document.querySelectorAll('#finishTimeGroup input,#finishTimeGroup button')).forEach(el => el.disabled = solarUsed);
   calculateStartTime();
 }
@@ -217,6 +212,105 @@ function calculateStartTime() {
     resultDiv.innerHTML = "Solar prediction is active. Use the 🔆 Predict Best Start Times button.";
   }
 }
+
+// --- Solar Forecast Logic ---
+async function fetchForecastFromSheet() {
+  const spreadsheetId = "1Aq9wucNZ5Izzxf5UQ1vKRIm19Ut5h_FRwUufZSnqIbw";
+  const sheetGid = "900300745";
+  const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${sheetGid}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Failed to fetch sheet data");
+  const csvText = await response.text();
+  const rows = csvText.trim().split('
+').slice(1);
+  return rows.map(row => {
+    const [timestamp, pvEstimate] = row.split(',');
+    return {
+      time: new Date(timestamp),
+      pvEstimate: parseFloat(pvEstimate)
+    };
+  });
+}
+
+async function predictBestStartTimesHandler() {
+  const resultDiv = document.getElementById('result');
+  resultDiv.textContent = "Calculating best start times based on solar forecast...";
+  try {
+    const [durHour, durMinute] = getTimeFromDigits('duration');
+    const numCycles = parseInt(document.getElementById('numCycles').value, 10) || 1;
+    if (durHour > 23 || durMinute > 59 || numCycles < 1) {
+      resultDiv.textContent = "Please enter valid times and number of cycles.";
+      return;
+    }
+    const durationMinutes = durHour * 60 + durMinute;
+    const now = new Date();
+    const bestStarts = await predictBestStartTimes(durationMinutes, numCycles, now);
+    if (bestStarts.length === 0) {
+      resultDiv.textContent = "No suitable start times found in the next 24 hours.";
+      return;
+    }
+    let output = `Recommended start times for ${numCycles} cycle(s):
+
+`;
+    bestStarts.forEach(({ time }, i) => {
+      let startHour = time.getHours().toString().padStart(2, '0');
+      let startMinute = time.getMinutes().toString().padStart(2, '0');
+      let diffMs = time.getTime() - now.getTime();
+      let diffMins = Math.round(diffMs / (1000 * 60));
+      let diffHours = Math.floor(diffMins / 60);
+      let diffRemainingMins = diffMins % 60;
+      output += `${i + 1}. ${startHour}:${startMinute} (in approx. ${diffHours}h ${diffRemainingMins}m)
+`;
+    });
+    resultDiv.textContent = output;
+  } catch (error) {
+    resultDiv.textContent = "Error calculating prediction: " + error.message;
+  }
+}
+
+async function predictBestStartTimes(durationMinutes, numCycles, referenceTime) {
+  const forecastData = await fetchForecastFromSheet();
+  const durationMs = durationMinutes * 60 * 1000;
+  const startSearch = referenceTime.getTime();
+  const endSearch = startSearch + 24 * 60 * 60 * 1000;
+  const candidateStarts = [];
+  for (let t = startSearch; t <= endSearch - durationMs; t += 15 * 60 * 1000) {
+    candidateStarts.push(new Date(t));
+  }
+  function solarInWindow(startTimestamp) {
+    const endTimestamp = startTimestamp + durationMs;
+    let totalPV = 0;
+    forecastData.forEach(({ time, pvEstimate }) => {
+      const ts = time.getTime();
+      if (ts >= startTimestamp && ts <= endTimestamp) {
+        totalPV += pvEstimate;
+      }
+    });
+    return totalPV;
+  }
+  const candidates = candidateStarts.map(dt => ({ time: dt, pvTotal: solarInWindow(dt.getTime()) }));
+  candidates.sort((a, b) => b.pvTotal - a.pvTotal);
+  const scheduled = [];
+  for (const candidate of candidates) {
+    if (scheduled.length >= numCycles) break;
+    let overlap = false;
+    const candidateStart = candidate.time.getTime();
+    const candidateEnd = candidateStart + durationMs;
+    for (const s of scheduled) {
+      const sStart = s.time.getTime();
+      const sEnd = sStart + durationMs;
+      if (!(candidateEnd <= sStart || candidateStart >= sEnd)) {
+        overlap = true;
+        break;
+      }
+    }
+    if (!overlap && candidate.time > referenceTime) {
+      scheduled.push(candidate);
+    }
+  }
+  return scheduled;
+}
+
 function attachListeners() {
   document.getElementById('finishHourUp').onclick = () => changeHour('finish', 1);
   document.getElementById('finishHourDown').onclick = () => changeHour('finish', -1);
@@ -235,7 +329,7 @@ function attachListeners() {
   });
   document.getElementById('solarToggle').onchange = toggleSolarUsage;
   document.getElementById('calcBtn').onclick = e => { e.preventDefault(); calculateStartTime(); };
-  document.getElementById('predictBtn').onclick = e => { e.preventDefault(); alert("Solar forecast fetch not included in this sample, but UI is working."); };
+  document.getElementById('predictBtn').onclick = e => { e.preventDefault(); predictBestStartTimesHandler(); };
   document.getElementById('resetBtn').onclick = e => {
     setTimeout(() => {
       setDefaults();
