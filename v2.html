@@ -228,6 +228,7 @@ async function predictBestStartTimesHandler() {
 
     const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrowDate = new Date(todayDate.getTime() + 24 * 60 * 60 * 1000);
+    const dayAfterTomorrowDate = new Date(todayDate.getTime() + 2 * 24 * 60 * 60 * 1000);
 
     // Filter strictly for future times and correct local day
     const todayStarts = bestStarts.filter(({ time }) =>
@@ -235,6 +236,9 @@ async function predictBestStartTimesHandler() {
     );
     const tomorrowStarts = bestStarts.filter(({ time }) =>
       time > now && isSameLocalDay(time, tomorrowDate)
+    );
+    const dayAfterTomorrowStarts = bestStarts.filter(({ time }) =>
+      time > now && isSameLocalDay(time, dayAfterTomorrowDate)
     );
 
     let finalStarts;
@@ -245,7 +249,7 @@ async function predictBestStartTimesHandler() {
     }
 
     if (!finalStarts || finalStarts.length === 0) {
-      resultDiv.textContent = "No suitable start times found in the next 48 hours.";
+      resultDiv.textContent = "No suitable start times found in the next 72 hours.";
       console.log("No start times found");
       return;
     }
@@ -268,7 +272,7 @@ async function predictBestStartTimes(durationMinutes, numCycles, referenceTime) 
   const forecastData = await fetchForecastFromSheet();
   const durationMs = durationMinutes * 60 * 1000;
   const startSearch = referenceTime.getTime();
-  const endSearch = startSearch + 48 * 60 * 60 * 1000; // 48 hours window
+  const endSearch = startSearch + 72 * 60 * 60 * 1000; // 72 hours window
   const candidateStarts = [];
   for (let t = startSearch; t <= endSearch - durationMs; t += 15 * 60 * 1000) {
     candidateStarts.push(new Date(t));
