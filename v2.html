@@ -202,6 +202,12 @@ async function fetchForecastFromSheet() {
     };
   });
 }
+function isSameLocalDay(date1, date2) {
+  return date1.getFullYear() === date2.getFullYear() &&
+         date1.getMonth() === date2.getMonth() &&
+         date1.getDate() === date2.getDate();
+}
+
 async function predictBestStartTimesHandler() {
   console.log("Predict button clicked");
   const resultDiv = document.getElementById('result');
@@ -219,44 +225,40 @@ async function predictBestStartTimesHandler() {
     const durationMinutes = durHour * 60 + durMinute;
     const now = new Date();
     let bestStarts = await predictBestStartTimes(durationMinutes, numCycles, now);
-    const todayDateStr = now.toDateString();
-    const tomorrowDateStr = new Date(now);
-    tomorrowDateStr.setDate(tomorrowDateStr.getDate() + 1);
-    const tomorrowStr = tomorrowDateStr.toDateString();
 
-    const todayStarts = bestStarts.filter(({ time }) => {
-      // Convert forecast time (UTC string) to local Date, compare
-      return time > now && time.toDateString() === todayDateStr;
-    });
-    const tomorrowStarts = bestStarts.filter(({ time }) => {
-      return time > now && time.toDateString() === tomorrowStr;
-    });
+    const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrowDate = new Date(todayDate.getTime() + 24 * 60 * 60 * 1000);
 
-    // Combine and pick the earliest ones
+    // Filter strictly for future times and correct local day
+    const todayStarts = bestStarts.filter(({ time }) =>
+      time > now && isSameLocalDay(time, todayDate)
+    );
+    const tomorrowStarts = bestStarts.filter(({ time }) =>
+      time > now && isSameLocalDay(time, tomorrowDate)
+    );
+
+    let finalStarts;
     if (todayStarts.length < numCycles) {
-      bestStarts = todayStarts.concat(tomorrowStarts).slice(0, numCycles);
+      finalStarts = todayStarts.concat(tomorrowStarts).slice(0, numCycles);
     } else {
-      bestStarts = todayStarts.slice(0, numCycles);
+      finalStarts = todayStarts.slice(0, numCycles);
     }
 
-    if (!bestStarts || bestStarts.length === 0) {
+    if (!finalStarts || finalStarts.length === 0) {
       resultDiv.textContent = "No suitable start times found in the next 48 hours.";
       console.log("No start times found");
       return;
     }
 
     let output = `Recommended start times for ${numCycles} cycle(s):\n\n`;
-    bestStarts.forEach(({ time, pvTotal }, i) => {
-      // Convert forecast time to local components
-      const localTime = new Date(time);
-      let startHour = localTime.getHours().toString().padStart(2, '0');
-      let startMinute = localTime.getMinutes().toString().padStart(2, '0');
-      const dayDiff = Math.floor((localTime.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
-      const dayLabel = dayDiff === 0 ? "today" : "tomorrow";
+    finalStarts.forEach(({ time, pvTotal }, i) => {
+      let startHour = time.getHours().toString().padStart(2, '0');
+      let startMinute = time.getMinutes().toString().padStart(2, '0');
+      const dayLabel = isSameLocalDay(time, todayDate) ? "today" : "tomorrow";
       output += `${i + 1}. ${startHour}:${startMinute} (${dayLabel}) - Estimated solar PV: ${pvTotal.toFixed(2)} kW\n`;
     });
     resultDiv.textContent = output;
-    console.log("Prediction complete", bestStarts);
+    console.log("Prediction complete", finalStarts);
   } catch (error) {
     resultDiv.textContent = "Error calculating prediction: " + error.message;
     console.error("Prediction error: ", error);
