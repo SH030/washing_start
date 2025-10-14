@@ -216,53 +216,71 @@ async function predictBestStartTimesHandler() {
     const [durHour, durMinute] = getTimeFromDigits('duration');
     let numCycles = parseInt(document.getElementById('numCycles').value, 10);
     if (!numCycles || numCycles < 1) numCycles = 1;
-    if (numCycles > 10) numCycles = 10;
-    if (durHour > 23 || durMinute > 59 || numCycles < 1) {
+    const maxResults = 10; // Limit suggestions to max 10
+    if (numCycles > maxResults) numCycles = maxResults;
+    if (durHour > 23 || durMinute > 59) {
       resultDiv.textContent = "Please enter valid times and number of cycles.";
       console.log("Invalid input");
       return;
     }
     const durationMinutes = durHour * 60 + durMinute;
     const now = new Date();
-    let bestStarts = await predictBestStartTimes(durationMinutes, numCycles, now);
+
+    // Get best start times (assumes predictBestStartTimes covers 72h)
+    let bestStarts = await predictBestStartTimes(durationMinutes, maxResults, now);
 
     const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrowDate = new Date(todayDate.getTime() + 24 * 60 * 60 * 1000);
     const dayAfterTomorrowDate = new Date(todayDate.getTime() + 2 * 24 * 60 * 60 * 1000);
 
-    // Filter strictly for future times and correct local day
-    const todayStarts = bestStarts.filter(({ time }) =>
-      time > now && isSameLocalDay(time, todayDate)
-    );
-    const tomorrowStarts = bestStarts.filter(({ time }) =>
-      time > now && isSameLocalDay(time, tomorrowDate)
-    );
-    const dayAfterTomorrowStarts = bestStarts.filter(({ time }) =>
-      time > now && isSameLocalDay(time, dayAfterTomorrowDate)
-    );
+    const pvThreshold = 0.05; // Minimum solar PV considered viable
 
-    let finalStarts;
-    if (todayStarts.length < numCycles) {
-      finalStarts = todayStarts.concat(tomorrowStarts).slice(0, numCycles);
+    // Filter and group by days
+    const todayStarts = bestStarts.filter(({ time, pvTotal }) =>
+      time > now && isSameLocalDay(time, todayDate) && pvTotal > pvThreshold
+    ).sort((a, b) => b.pvTotal - a.pvTotal);
+
+    const tomorrowStarts = bestStarts.filter(({ time, pvTotal }) =>
+      time > now && isSameLocalDay(time, tomorrowDate) && pvTotal > pvThreshold
+    ).sort((a, b) => b.pvTotal - a.pvTotal);
+
+    const dayAfterTomorrowStarts = bestStarts.filter(({ time, pvTotal }) =>
+      time > now && isSameLocalDay(time, dayAfterTomorrowDate) && pvTotal > pvThreshold
+    ).sort((a, b) => b.pvTotal - a.pvTotal);
+
+    // Combine groups prioritizing today -> tomorrow -> day after tomorrow
+    let combined = [...todayStarts];
+    if (combined.length < numCycles) {
+      combined = combined.concat(tomorrowStarts);
+    }
+    if (combined.length < numCycles) {
+      combined = combined.concat(dayAfterTomorrowStarts);
+    }
+    combined = combined.slice(0, numCycles);
+
+    // If after filtering no viable start times, fallback to showing best regardless of PV threshold
+    if(combined.length === 0){
+      combined = bestStarts.slice(0, numCycles);
+      resultDiv.textContent = "No times with sufficient solar power found; showing best available times.\n\n";
     } else {
-      finalStarts = todayStarts.slice(0, numCycles);
+      resultDiv.textContent = "";
     }
 
-    if (!finalStarts || finalStarts.length === 0) {
-      resultDiv.textContent = "No suitable start times found in the next 72 hours.";
-      console.log("No start times found");
-      return;
-    }
-
-    let output = `Recommended start times for ${numCycles} cycle(s):\n\n`;
-    finalStarts.forEach(({ time, pvTotal }, i) => {
+    // Display final recommended start times
+    let output = `Recommended start times for ${combined.length} cycle(s):\n\n`;
+    combined.forEach(({ time, pvTotal }, i) => {
       let startHour = time.getHours().toString().padStart(2, '0');
       let startMinute = time.getMinutes().toString().padStart(2, '0');
-      const dayLabel = isSameLocalDay(time, todayDate) ? "today" : "tomorrow";
+      const dayLabel = isSameLocalDay(time, todayDate)
+        ? "today"
+        : isSameLocalDay(time, tomorrowDate)
+        ? "tomorrow"
+        : "day after tomorrow";
       output += `${i + 1}. ${startHour}:${startMinute} (${dayLabel}) - Estimated solar PV: ${pvTotal.toFixed(2)} kW\n`;
     });
-    resultDiv.textContent = output;
-    console.log("Prediction complete", finalStarts);
+    resultDiv.textContent += output;
+    console.log("Prediction complete", combined);
+
   } catch (error) {
     resultDiv.textContent = "Error calculating prediction: " + error.message;
     console.error("Prediction error: ", error);
