@@ -234,7 +234,7 @@ async function predictBestStartTimesHandler() {
     const tomorrowDate = new Date(todayDate.getTime() + 24 * 60 * 60 * 1000);
     const dayAfterTomorrowDate = new Date(todayDate.getTime() + 2 * 24 * 60 * 60 * 1000);
 
-    const PV_THRESHOLD = 0.05; // Minimum solar PV threshold
+    const PV_THRESHOLD = 0.5; // Minimum solar PV threshold
 
     // Filter and group by day with threshold applied
     const todayStarts = bestStarts.filter(({ time, pvTotal }) =>
