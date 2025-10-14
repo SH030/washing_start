@@ -216,8 +216,8 @@ async function predictBestStartTimesHandler() {
     const [durHour, durMinute] = getTimeFromDigits('duration');
     let numCycles = parseInt(document.getElementById('numCycles').value, 10);
     if (!numCycles || numCycles < 1) numCycles = 1;
-    const maxResults = 10; // Limit suggestions to max 10
-    if (numCycles > maxResults) numCycles = maxResults;
+    const MAX_RESULTS = 10;
+    if (numCycles > MAX_RESULTS) numCycles = MAX_RESULTS;
     if (durHour > 23 || durMinute > 59) {
       resultDiv.textContent = "Please enter valid times and number of cycles.";
       console.log("Invalid input");
@@ -226,47 +226,44 @@ async function predictBestStartTimesHandler() {
     const durationMinutes = durHour * 60 + durMinute;
     const now = new Date();
 
-    // Get best start times (assumes predictBestStartTimes covers 72h)
-    let bestStarts = await predictBestStartTimes(durationMinutes, maxResults, now);
+    // Obtain best start times, should cover 72h inside predictBestStartTimes
+    let bestStarts = await predictBestStartTimes(durationMinutes, MAX_RESULTS, now);
 
+    // Set days for grouping
     const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrowDate = new Date(todayDate.getTime() + 24 * 60 * 60 * 1000);
     const dayAfterTomorrowDate = new Date(todayDate.getTime() + 2 * 24 * 60 * 60 * 1000);
 
-    const pvThreshold = 0.05; // Minimum solar PV considered viable
+    const PV_THRESHOLD = 0.05; // Minimum solar PV threshold
 
-    // Filter and group by days
+    // Filter and group by day with threshold applied
     const todayStarts = bestStarts.filter(({ time, pvTotal }) =>
-      time > now && isSameLocalDay(time, todayDate) && pvTotal > pvThreshold
+      time > now && isSameLocalDay(time, todayDate) && pvTotal > PV_THRESHOLD
     ).sort((a, b) => b.pvTotal - a.pvTotal);
 
     const tomorrowStarts = bestStarts.filter(({ time, pvTotal }) =>
-      time > now && isSameLocalDay(time, tomorrowDate) && pvTotal > pvThreshold
+      time > now && isSameLocalDay(time, tomorrowDate) && pvTotal > PV_THRESHOLD
     ).sort((a, b) => b.pvTotal - a.pvTotal);
 
     const dayAfterTomorrowStarts = bestStarts.filter(({ time, pvTotal }) =>
-      time > now && isSameLocalDay(time, dayAfterTomorrowDate) && pvTotal > pvThreshold
+      time > now && isSameLocalDay(time, dayAfterTomorrowDate) && pvTotal > PV_THRESHOLD
     ).sort((a, b) => b.pvTotal - a.pvTotal);
 
-    // Combine groups prioritizing today -> tomorrow -> day after tomorrow
+    // Combine groups to meet requested cycles count, prioritizing today > tomorrow > day after tomorrow
     let combined = [...todayStarts];
-    if (combined.length < numCycles) {
-      combined = combined.concat(tomorrowStarts);
-    }
-    if (combined.length < numCycles) {
-      combined = combined.concat(dayAfterTomorrowStarts);
-    }
+    if (combined.length < numCycles) combined = combined.concat(tomorrowStarts);
+    if (combined.length < numCycles) combined = combined.concat(dayAfterTomorrowStarts);
     combined = combined.slice(0, numCycles);
 
-    // If after filtering no viable start times, fallback to showing best regardless of PV threshold
-    if(combined.length === 0){
+    // If none meet threshold, fallback to including any best times ignoring threshold
+    if (combined.length === 0) {
       combined = bestStarts.slice(0, numCycles);
       resultDiv.textContent = "No times with sufficient solar power found; showing best available times.\n\n";
     } else {
       resultDiv.textContent = "";
     }
 
-    // Display final recommended start times
+    // Display the results with accurate day labels
     let output = `Recommended start times for ${combined.length} cycle(s):\n\n`;
     combined.forEach(({ time, pvTotal }, i) => {
       let startHour = time.getHours().toString().padStart(2, '0');
@@ -280,12 +277,12 @@ async function predictBestStartTimesHandler() {
     });
     resultDiv.textContent += output;
     console.log("Prediction complete", combined);
-
   } catch (error) {
     resultDiv.textContent = "Error calculating prediction: " + error.message;
     console.error("Prediction error: ", error);
   }
 }
+
 async function predictBestStartTimes(durationMinutes, numCycles, referenceTime) {
   const forecastData = await fetchForecastFromSheet();
   const durationMs = durationMinutes * 60 * 1000;
