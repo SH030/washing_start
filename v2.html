@@ -219,33 +219,39 @@ async function predictBestStartTimesHandler() {
     const durationMinutes = durHour * 60 + durMinute;
     const now = new Date();
     let bestStarts = await predictBestStartTimes(durationMinutes, numCycles, now);
-    const today = now.toDateString();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toDateString();
-    
+    const todayDateStr = now.toDateString();
+    const tomorrowDateStr = new Date(now);
+    tomorrowDateStr.setDate(tomorrowDateStr.getDate() + 1);
+    const tomorrowStr = tomorrowDateStr.toDateString();
+
     const todayStarts = bestStarts.filter(({ time }) => {
-      return time > now && time.toDateString() === today;
+      // Convert forecast time (UTC string) to local Date, compare
+      return time > now && time.toDateString() === todayDateStr;
     });
     const tomorrowStarts = bestStarts.filter(({ time }) => {
       return time > now && time.toDateString() === tomorrowStr;
     });
 
+    // Combine and pick the earliest ones
     if (todayStarts.length < numCycles) {
       bestStarts = todayStarts.concat(tomorrowStarts).slice(0, numCycles);
     } else {
       bestStarts = todayStarts.slice(0, numCycles);
     }
+
     if (!bestStarts || bestStarts.length === 0) {
       resultDiv.textContent = "No suitable start times found in the next 48 hours.";
       console.log("No start times found");
       return;
     }
+
     let output = `Recommended start times for ${numCycles} cycle(s):\n\n`;
     bestStarts.forEach(({ time, pvTotal }, i) => {
-      let startHour = time.getHours().toString().padStart(2, '0');
-      let startMinute = time.getMinutes().toString().padStart(2, '0');
-      const dayDiff = Math.floor((time.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+      // Convert forecast time to local components
+      const localTime = new Date(time);
+      let startHour = localTime.getHours().toString().padStart(2, '0');
+      let startMinute = localTime.getMinutes().toString().padStart(2, '0');
+      const dayDiff = Math.floor((localTime.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
       const dayLabel = dayDiff === 0 ? "today" : "tomorrow";
       output += `${i + 1}. ${startHour}:${startMinute} (${dayLabel}) - Estimated solar PV: ${pvTotal.toFixed(2)} kW\n`;
     });
