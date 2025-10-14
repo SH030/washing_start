@@ -174,9 +174,13 @@ function calculateStartTime() {
     const [finishHour, finishMinute] = getTimeFromDigits('finish');
     if (finishHour > 23 || finishMinute > 59) return resultDiv.innerHTML = "Please enter a valid finish time.";
     let finishDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), finishHour, finishMinute);
-    if (finishDate < now) finishDate.setDate(finishDate.getDate() + 1);
+    // If finishDate is before now, move finishDate to the next day
+    if (finishDate <= now) finishDate.setDate(finishDate.getDate() + 1);
     let startDate = new Date(finishDate.getTime() - durationMins * 60 * 1000);
-    if (startDate < now) startDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
+    // If startDate is before now (due to duration), push startDate forward in increments of 24h until it is after now
+    while (startDate <= now) {
+      startDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
+    }
     displayResult(startDate, now, durationMins);
   } else {
     resultDiv.innerHTML = "Solar prediction is active. Use the 🔆 Predict Best Start Times button.";
@@ -215,14 +219,18 @@ async function predictBestStartTimesHandler() {
     const durationMinutes = durHour * 60 + durMinute;
     const now = new Date();
     let bestStarts = await predictBestStartTimes(durationMinutes, numCycles, now);
+    const today = now.toDateString();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toDateString();
+    
     const todayStarts = bestStarts.filter(({ time }) => {
-      const diffDays = Math.floor((time.getTime() - now.getTime()) / (24 * 3600 * 1000));
-      return diffDays === 0;
+      return time > now && time.toDateString() === today;
     });
     const tomorrowStarts = bestStarts.filter(({ time }) => {
-      const diffDays = Math.floor((time.getTime() - now.getTime()) / (24 * 3600 * 1000));
-      return diffDays > 0;
+      return time > now && time.toDateString() === tomorrowStr;
     });
+
     if (todayStarts.length < numCycles) {
       bestStarts = todayStarts.concat(tomorrowStarts).slice(0, numCycles);
     } else {
