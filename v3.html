@@ -1,50 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Solar PV Cycle Visualization with Bars</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 20px;
-      max-width: 950px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-    h1 {
-      text-align: center;
-      margin-bottom: 1rem;
-    }
-    #result {
-      white-space: pre-line;
-      margin: 1em 0;
-      font-family: monospace;
-      background:#f7f7f7;
-      padding:10px;
-      border-radius:5px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 1em;
-    }
-    th, td {
-      border: 1px solid #999;
-      padding: 8px;
-      text-align: center;
-    }
-    canvas {
-      background: #e9e9e9;
-      margin-top: 2em;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Solar PV Cycle Visualization with Stacked Bars</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    max-width: 950px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  h1 {
+    text-align: center;
+    margin-bottom: 1rem;
+  }
+  #result {
+    white-space: pre-line;
+    margin: 1em 0;
+    font-family: monospace;
+    background:#f7f7f7;
+    padding:10px;
+    border-radius:5px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1em;
+  }
+  th, td {
+    border: 1px solid #999;
+    padding: 8px;
+    text-align: center;
+  }
+  canvas {
+    background: #e9e9e9;
+    margin-top: 2em;
+  }
+</style>
 </head>
 <body>
 
-<h1>Solar PV Cycle Visualization with Bars</h1>
+<h1>Solar PV Cycle Visualization with Stacked Bars</h1>
 
 <label>Cycle Duration HH:MM:
   <input type="text" id="duration" placeholder="01:30" value="01:30" style="width:70px"/>
@@ -57,7 +57,7 @@
 <div id="result"></div>
 
 <h2>Raw Solar PV Data and Candidate Cycles</h2>
-<canvas id="pvChart" width="950" height="300"></canvas>
+<canvas id="pvChart" width="950" height="400"></canvas>
 
 <h2>Predicted Start Times</h2>
 <table>
@@ -76,7 +76,7 @@ async function loadRawData() {
   if (!res.ok) throw new Error('Failed to fetch sheet data');
   const csv = await res.text();
   const lines = csv.trim().split('\n');
-  lines.shift(); // remove header
+  lines.shift();
   return lines.map(line => {
     const [timeStr, pvStr] = line.split(',');
     return {
@@ -100,101 +100,102 @@ function getColorByIndex(index) {
   return colors[index % colors.length];
 }
 
-function plotPVDataWithBars(rawData, selected) {
+function plotPVDataStacked(rawData, selected) {
   if (pvChartInstance) pvChartInstance.destroy();
 
-  // Base raw data line dataset
   const baseDataset = {
     label: 'Raw PV Data',
-    data: rawData.map(d => ({x: d.time, y: d.pvEstimate})),
+    data: rawData.map(d => ({x: d.time, y: 0})), // baseline at 0 for y (category axis)
     borderColor: 'rgba(0,123,255,0.3)',
     backgroundColor: 'rgba(0,123,255,0.1)',
-    fill: true,
+    fill: false,
     pointRadius: 0,
-    tension: 0.3,
-    type: 'line'
+    type: 'line',
+    spanGaps: true,
   };
 
-  // Prepare labels for X axis - use half hour timestamps from raw data
-  const labels = rawData.map(d => d.time);
+  // Categories = "Cycle 1", "Cycle 2", ... for vertical axis
+  const categories = selected.map((_, i) => `Cycle ${i+1}`);
 
-  // Prepare bar data as floating bars [start, end] in timestamp fractions along time axis
-  // Chart.js expects date/time X axis but bar chart expects categories by default
-  // So, we will create a bar chart with labels as time strings and bars indicating PV average for cycle window
-  // We'll convert startTimes to labels, bars span 90min or chosen duration - we simulate by repeating label and providing start,end values
+  // Floating bars: x is time, y is the category index, bar length = avg PV (height in vertical axis)
+  // Chart.js floating bars require [start, end] on value axis, but since y is categorical, we encode with small height bars
 
-  // To do floating bars, Chart.js supports arrays as data points: [start, end] values
-  // We'll create datasets each representing one cycle window (bar)
-  
-  // Calculate duration in ms for bar lengths
-  const cycleDurationMs = (document.getElementById('duration').value.split(':').reduce((p,c) => 60*p + +c))*60000;
+  // X axis: time (min: rawData min time, max: rawData max time)
+  // Y axis: categorical per cycle, bars go from [0, avgPV] on values
+  // We plot a bar dataset per cycle, with data: [{x: startTime, y: index - barHeight/2 to index + barHeight/2}] for floating bars
+
+  const cycleBarHeight = 0.6; // vertical bar height fraction per category
 
   const barDatasets = selected.map((startObj, idx) => {
-    const startTime = startObj.time.getTime();
-    const endTime = startTime + cycleDurationMs;
-
-    // For floating bars: data field expects [low, high] values on the Y axis, X axis is category labels.
-    // We'll build a floating bar at the x-position of the start time label with height corresponding to average PV.
-
-    // Chart.js floating bar with time axis requires setting x as time, y as an array [start, end].
-    // For our case, y is PV so we fake y values to show as bars, we can set y to [0, avgPV]
-    // To position bars exactly at timestamps we use 'bar' chart type with 'timeseries' x axis with min/max range
-
+    const startTimeMs = startObj.time.getTime();
     return {
-      label: `Cycle ${idx + 1} Start ${startObj.time.getHours().toString().padStart(2,'0')}:${startObj.time.getMinutes().toString().padStart(2,'0')}`,
-      data: [{x: startObj.time, y: [0, startObj.avgPV]}],
+      label: `Cycle ${idx+1} Start ${startObj.time.getHours().toString().padStart(2,'0')}:${startObj.time.getMinutes().toString().padStart(2,'0')}`,
+      data: [{
+        x: startObj.time,
+        y: [idx - cycleBarHeight/2, idx + cycleBarHeight/2] // y is category axis: this floats bar vertically within category
+      }],
       backgroundColor: getColorByIndex(idx),
-      borderColor: getColorByIndex(idx),
+      borderColor: 'black',
       borderWidth: 1,
       type: 'bar',
       borderSkipped: false,
-      barPercentage: 0.5,
-      categoryPercentage: 0.8
+      barPercentage: 1.0,
+      categoryPercentage: 1.0,
     };
   });
 
   const datasets = [baseDataset, ...barDatasets];
 
+  // We need min and max time for x scale
+  const minTime = new Date(Math.min(...rawData.map(d => d.time.getTime())));
+  const maxTime = new Date(Math.max(...rawData.map(d => d.time.getTime())));
+
   pvChartInstance = new Chart(document.getElementById('pvChart'), {
-    type: 'bar', // base chart is bar to accommodate floating bars
-    data: {
-      datasets: datasets
-    },
+    type: 'bar',
+    data: { datasets: datasets },
     options: {
-      responsive:true,
+      indexAxis: 'y',
       scales: {
         x: {
           type: 'time',
+          position: 'bottom',
+          min: minTime,
+          max: maxTime,
+          title: {
+            display: true, text: 'Time'
+          },
           time: {
             unit: 'hour',
-            tooltipFormat: 'MMM d, h:mm a'
+            tooltipFormat: 'MMM d, h:mm a',
           },
-          title: { display: true, text: 'Time' }
+          stacked: false
         },
         y: {
-          beginAtZero:true,
-          title: { display: true, text: 'Solar PV (kW)' }
+          type: 'category',
+          labels: categories,
+          stacked: false,
+          title: {
+            display: true,
+            text: 'Cycles'
+          }
         }
       },
       plugins: {
         tooltip: {
-          mode: 'nearest',
-          intersect: false,
           callbacks: {
-            label: ctx => {
-              if(ctx.dataset.type === 'line'){
-                return `PV: ${ctx.parsed.y.toFixed(3)} kW`;
-              } else {
-                return `${ctx.dataset.label}: ${ctx.parsed.y[1].toFixed(3)} kW avg PV during cycle`;
+            label: function(context) {
+              const label = context.dataset.label || '';
+              if (label) {
+                return label;
               }
+              return '';
             }
           }
         },
-        legend: { position: 'top' }
-      },
-      interaction: {
-        mode:'nearest',
-        intersect: false
+        legend: {
+          display: true,
+          position: 'top'
+        }
       }
     }
   });
@@ -211,10 +212,10 @@ async function runPrediction() {
 
     const durationVal = document.getElementById('duration').value.trim();
     const [dh, dm] = durationVal.split(':').map(n => parseInt(n));
-    const cycleMinutes = dh*60 + dm;
+    const cycleMinutes = dh * 60 + dm;
 
     let maxCycles = parseInt(document.getElementById('numCycles').value, 10);
-    maxCycles = Math.min(Math.max(maxCycles,1),10);
+    maxCycles = Math.min(Math.max(maxCycles, 1), 10);
 
     // Candidate start points after now
     const candidates = rawData.filter(d => d.time > now);
@@ -222,11 +223,11 @@ async function runPrediction() {
     // Calculate average PV during cycle for each candidate
     const candidateScores = candidates.map((start) => {
       const startTime = start.time;
-      const endTime = new Date(startTime.getTime() + cycleMinutes*60000);
+      const endTime = new Date(startTime.getTime() + cycleMinutes * 60000);
       const cycleData = rawData.filter(d => d.time >= startTime && d.time <= endTime);
-      if(cycleData.length === 0) return {...start, avgPV: 0};
+      if (cycleData.length === 0) return { ...start, avgPV: 0 };
       const avgPV = cycleData.reduce((a, c) => a + c.pvEstimate, 0) / cycleData.length;
-      return {...start, avgPV, cycleData};
+      return { ...start, avgPV, cycleData };
     });
 
     // Filter by PV threshold
@@ -235,8 +236,7 @@ async function runPrediction() {
       .sort((a, b) => b.avgPV - a.avgPV)
       .slice(0, maxCycles);
 
-    // Plot with bars instead of lines
-    plotPVDataWithBars(rawData, validStarts);
+    plotPVDataStacked(rawData, validStarts);
 
     // Prepare prediction text and table
     resultDiv.textContent = "";
@@ -250,11 +250,11 @@ async function runPrediction() {
     validStarts.forEach((s, i) => {
       const time = s.time;
       const dayLabel = isSameDay(time, today) ? "today" : isSameDay(time, tomorrow) ? "tomorrow" : "day after";
-      const timeStr = time.getHours().toString().padStart(2,'0')+':'+time.getMinutes().toString().padStart(2,'0');
-      output += `\n${i+1}. ${timeStr} (${dayLabel}) - Avg PV: ${s.avgPV.toFixed(2)} kW`;
+      const timeStr = time.getHours().toString().padStart(2, '0') + ':' + time.getMinutes().toString().padStart(2, '0');
+      output += `\n${i + 1}. ${timeStr} (${dayLabel}) - Avg PV: ${s.avgPV.toFixed(2)} kW`;
 
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${i+1}</td><td>${timeStr}</td><td>${dayLabel}</td><td>${s.avgPV.toFixed(2)}</td>`;
+      tr.innerHTML = `<td>${i + 1}</td><td>${timeStr}</td><td>${dayLabel}</td><td>${s.avgPV.toFixed(2)}</td>`;
       tbody.appendChild(tr);
     });
     resultDiv.textContent = output;
@@ -264,7 +264,6 @@ async function runPrediction() {
     console.error(e);
   }
 }
-
 </script>
 </body>
 </html>
