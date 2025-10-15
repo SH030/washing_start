@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Solar PV Prediction & Cycle Visualization</title>
+  <title>Solar PV Cycle Visualization with Bars</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <style>
@@ -44,7 +44,7 @@
 </head>
 <body>
 
-<h1>Solar PV Prediction & Cycle Visualization</h1>
+<h1>Solar PV Cycle Visualization with Bars</h1>
 
 <label>Cycle Duration HH:MM:
   <input type="text" id="duration" placeholder="01:30" value="01:30" style="width:70px"/>
@@ -70,7 +70,6 @@
 <script>
 let pvChartInstance = null;
 
-// Load raw data from Google Sheet CSV export
 async function loadRawData() {
   const url = 'https://docs.google.com/spreadsheets/d/1Aq9wucNZ5Izzxf5UQ1vKRIm19Ut5h_FRwUufZSnqIbw/export?format=csv&gid=900300745';
   const res = await fetch(url);
@@ -93,7 +92,6 @@ function isSameDay(d1, d2) {
          d1.getDate()===d2.getDate();
 }
 
-// Generate distinct colors for datasets
 function getColorByIndex(index) {
   const colors = [
     '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
@@ -102,9 +100,10 @@ function getColorByIndex(index) {
   return colors[index % colors.length];
 }
 
-// Plot raw data plus cycle datasets
-function plotPVDataWithCycles(rawData, cycleDatasets) {
+function plotPVDataWithBars(rawData, selected) {
   if (pvChartInstance) pvChartInstance.destroy();
+
+  // Base raw data line dataset
   const baseDataset = {
     label: 'Raw PV Data',
     data: rawData.map(d => ({x: d.time, y: d.pvEstimate})),
@@ -113,36 +112,94 @@ function plotPVDataWithCycles(rawData, cycleDatasets) {
     fill: true,
     pointRadius: 0,
     tension: 0.3,
+    type: 'line'
   };
 
-  const datasets = [baseDataset, ...cycleDatasets];
+  // Prepare labels for X axis - use half hour timestamps from raw data
+  const labels = rawData.map(d => d.time);
+
+  // Prepare bar data as floating bars [start, end] in timestamp fractions along time axis
+  // Chart.js expects date/time X axis but bar chart expects categories by default
+  // So, we will create a bar chart with labels as time strings and bars indicating PV average for cycle window
+  // We'll convert startTimes to labels, bars span 90min or chosen duration - we simulate by repeating label and providing start,end values
+
+  // To do floating bars, Chart.js supports arrays as data points: [start, end] values
+  // We'll create datasets each representing one cycle window (bar)
+  
+  // Calculate duration in ms for bar lengths
+  const cycleDurationMs = (document.getElementById('duration').value.split(':').reduce((p,c) => 60*p + +c))*60000;
+
+  const barDatasets = selected.map((startObj, idx) => {
+    const startTime = startObj.time.getTime();
+    const endTime = startTime + cycleDurationMs;
+
+    // For floating bars: data field expects [low, high] values on the Y axis, X axis is category labels.
+    // We'll build a floating bar at the x-position of the start time label with height corresponding to average PV.
+
+    // Chart.js floating bar with time axis requires setting x as time, y as an array [start, end].
+    // For our case, y is PV so we fake y values to show as bars, we can set y to [0, avgPV]
+    // To position bars exactly at timestamps we use 'bar' chart type with 'timeseries' x axis with min/max range
+
+    return {
+      label: `Cycle ${idx + 1} Start ${startObj.time.getHours().toString().padStart(2,'0')}:${startObj.time.getMinutes().toString().padStart(2,'0')}`,
+      data: [{x: startObj.time, y: [0, startObj.avgPV]}],
+      backgroundColor: getColorByIndex(idx),
+      borderColor: getColorByIndex(idx),
+      borderWidth: 1,
+      type: 'bar',
+      borderSkipped: false,
+      barPercentage: 0.5,
+      categoryPercentage: 0.8
+    };
+  });
+
+  const datasets = [baseDataset, ...barDatasets];
 
   pvChartInstance = new Chart(document.getElementById('pvChart'), {
-    type: 'line',
-    data: { labels: rawData.map(d => d.time), datasets },
+    type: 'bar', // base chart is bar to accommodate floating bars
+    data: {
+      datasets: datasets
+    },
     options: {
-      responsive: true,
-      interaction: { mode:'nearest', intersect: false },
-      plugins: {
-        legend: { position: 'top' },
-        tooltip: { mode:'index', intersect: false },
-      },
+      responsive:true,
       scales: {
         x: {
           type: 'time',
-          time: { unit: 'hour', tooltipFormat: 'MMM d, h:mm a' },
+          time: {
+            unit: 'hour',
+            tooltipFormat: 'MMM d, h:mm a'
+          },
           title: { display: true, text: 'Time' }
         },
         y: {
-          beginAtZero: true,
-          title: { display: true, text: 'Solar PV Power (kW)' }
+          beginAtZero:true,
+          title: { display: true, text: 'Solar PV (kW)' }
         }
+      },
+      plugins: {
+        tooltip: {
+          mode: 'nearest',
+          intersect: false,
+          callbacks: {
+            label: ctx => {
+              if(ctx.dataset.type === 'line'){
+                return `PV: ${ctx.parsed.y.toFixed(3)} kW`;
+              } else {
+                return `${ctx.dataset.label}: ${ctx.parsed.y[1].toFixed(3)} kW avg PV during cycle`;
+              }
+            }
+          }
+        },
+        legend: { position: 'top' }
+      },
+      interaction: {
+        mode:'nearest',
+        intersect: false
       }
     }
   });
 }
 
-// Main prediction and plotting function
 async function runPrediction() {
   const resultDiv = document.getElementById('result');
   resultDiv.textContent = "Loading data and calculating...";
@@ -167,6 +224,7 @@ async function runPrediction() {
       const startTime = start.time;
       const endTime = new Date(startTime.getTime() + cycleMinutes*60000);
       const cycleData = rawData.filter(d => d.time >= startTime && d.time <= endTime);
+      if(cycleData.length === 0) return {...start, avgPV: 0};
       const avgPV = cycleData.reduce((a, c) => a + c.pvEstimate, 0) / cycleData.length;
       return {...start, avgPV, cycleData};
     });
@@ -177,20 +235,8 @@ async function runPrediction() {
       .sort((a, b) => b.avgPV - a.avgPV)
       .slice(0, maxCycles);
 
-    // Generate cycle datasets with colors for plotting
-    const cycleDatasets = validStarts.map((startObj, idx) => ({
-      label: `Start ${idx + 1} - ${startObj.time.getHours().toString().padStart(2,'0')}:${startObj.time.getMinutes().toString().padStart(2,'0')}`,
-      data: startObj.cycleData.map(d => ({x: d.time, y: d.pvEstimate})),
-      borderColor: getColorByIndex(idx),
-      backgroundColor: getColorByIndex(idx),
-      fill: false,
-      pointRadius: 3,
-      cubicInterpolationMode: 'monotone',
-      tension: 0.4,
-    }));
-
-    // Plot everything
-    plotPVDataWithCycles(rawData, cycleDatasets);
+    // Plot with bars instead of lines
+    plotPVDataWithBars(rawData, validStarts);
 
     // Prepare prediction text and table
     resultDiv.textContent = "";
