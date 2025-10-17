@@ -29,7 +29,6 @@
   #resetBtn:active { background: #aaa; }
   .icon-wash { width: 32px; height: 32px; vertical-align: middle; margin-right: 0.5em; }
 
-  /* Soap-colored buttons with chevron inside */
   .pv-btn {
     display: flex;
     align-items: center;
@@ -50,24 +49,30 @@
     cursor: pointer;
     transition: background 0.2s, box-shadow 0.2s;
     position: relative;
+    line-height: 1.1;
   }
   .pv-btn:active, .pv-btn.open {
     background: linear-gradient(90deg, #ffe2e9 70%, #ffd6de 100%);
     box-shadow: 0 4px 12px #ffbcd340;
   }
   .pv-chevron {
+    display: inline-flex;
+    align-items: center;
     margin-left: 1em;
-    flex-shrink: 0;
     width: 22px;
     height: 22px;
-    display: inline-block;
     transition: transform 0.27s ease;
   }
   .pv-btn.open .pv-chevron {
     transform: rotate(180deg);
   }
-
-  /* PV breakdown tray background when open */
+  .pv-chevron svg {
+    display: block;
+    margin: 0;
+    line-height: 1;
+    width: 22px;
+    height: 22px;
+  }
   .pv-breakdown-container {
     margin: 8px 0 14px 0;
     padding: 12px 16px;
@@ -177,59 +182,67 @@ function digitCycleHandler(e) {
   }
   e.target.value = val.toString();
 }
-function displayResult(startDate, now, durationMins) {
-  const timerSettings = [];
-  for (let h = 0; h <= 10; h++) {
-    if (h > 0) timerSettings.push(h * 60);
-    if (h < 10) timerSettings.push(h * 60 + 30);
-  }
-  for (let h = 11; h <= 24; h++) {
-    timerSettings.push(h * 60);
-  }
-  let startHour = startDate.getHours().toString().padStart(2, '0');
-  let startMinute = startDate.getMinutes().toString().padStart(2, '0');
-  let diffMs = startDate.getTime() - now.getTime();
-  let diffMins = Math.round(diffMs / (1000 * 60));
-  let diffHours = Math.floor(diffMins / 60);
-  let diffMinutes = diffMins % 60;
-  let exactStartIn = `${diffHours} hour(s) and ${diffMinutes} minute(s) from now`;
-  let roundedDownSetting = null;
-  for (let i = timerSettings.length - 1; i >= 0; i--) {
-    if (timerSettings[i] <= diffMins) {
-      roundedDownSetting = timerSettings[i];
+// Helper: Linear interpolation of solar PV at exact start time
+function interpolatePVAt(timeMs, forecastData) {
+  let before = null, after = null;
+  for(let i=0; i<forecastData.length-1; i++) {
+    const t0 = forecastData[i].time.getTime();
+    const t1 = forecastData[i+1].time.getTime();
+    if(t0 <= timeMs && t1 >= timeMs) {
+      before = forecastData[i];
+      after = forecastData[i+1];
       break;
     }
   }
-  let roundedDownStr = roundedDownSetting !== null ?
-    `${Math.floor(roundedDownSetting / 60)}:${pad(roundedDownSetting % 60)}` : "No suitable timer setting";
-  document.getElementById('result').innerHTML =
-    `<div>Closest round down timer setting:</div>` +
-    `<h2>${roundedDownStr}</h2>` +
-    `<div><strong>Start the washing machine at:</strong> ${startHour}:${startMinute}</div>` +
-    `<div><strong>Actual start in:</strong> ${exactStartIn}</div>`;
-}
-function calculateStartTime() {
-  const solarUsed = document.getElementById('solarToggle').checked;
-  const resultDiv = document.getElementById('result');
-  resultDiv.innerHTML = "";
-  const [durHour, durMinute] = getTimeFromDigits('duration');
-  if (durHour > 23 || durMinute > 59) return resultDiv.innerHTML = "Please enter a valid duration.";
-  const durationMins = durHour * 60 + durMinute;
-  const now = new Date();
-  if (!solarUsed) {
-    const [finishHour, finishMinute] = getTimeFromDigits('finish');
-    if (finishHour > 23 || finishMinute > 59) return resultDiv.innerHTML = "Please enter a valid finish time.";
-    let finishDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), finishHour, finishMinute);
-    if (finishDate <= now) finishDate.setDate(finishDate.getDate() + 1);
-    let startDate = new Date(finishDate.getTime() - durationMins * 60 * 1000);
-    while (startDate <= now) {
-      startDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
-    }
-    displayResult(startDate, now, durationMins);
-  } else {
-    resultDiv.innerHTML = "Solar prediction is active. Use the 🔆 Predict Best Start Times button.";
+  if (!before || !after) {
+    if(before) return before.pvEstimate;
+    if(after) return after.pvEstimate;
+    return 0;
   }
+  const dt = after.time.getTime() - before.time.getTime();
+  const dpv = after.pvEstimate - before.pvEstimate;
+  const fraction = (timeMs - before.time.getTime()) / dt;
+  return before.pvEstimate + dpv * fraction;
 }
+// Render chart with interpolated start PV and subsequent intervals
+function createPVContributionsChart(startTime, durationMinutes, forecastData) {
+  const durationMs = durationMinutes * 60 * 1000;
+  const startTs = startTime.getTime();
+  const endTs = startTs + durationMs;
+  const startPV = interpolatePVAt(startTs, forecastData);
+
+  // select intervals inside window, exclude start (will be interpolated)
+  const intervalsAfterStart = forecastData.filter(({time}) => time.getTime() > startTs && time.getTime() <= endTs);
+
+  // Prepend interpolated start time point
+  const points = [{time: new Date(startTs), pvEstimate: startPV}].concat(intervalsAfterStart);
+
+  const maxPV = Math.max(...points.map(d => d.pvEstimate), 1);
+  const chartWidth = Math.max(320, points.length * 38);
+  const chartHeight = 100;
+
+  let svg = `<svg width="${chartWidth}" height="${chartHeight}" style="display:block;margin:auto;background:#fff;border-radius:8px;">`;
+  points.forEach(({time, pvEstimate}, i) => {
+    const barHeight = (pvEstimate / maxPV) * (chartHeight - 45);
+    const x = 36 + i * 32;
+    const y = chartHeight - barHeight - 28;
+    svg += `
+      <rect x="${x}" y="${y}" width="26" height="${barHeight}" fill="#ffd6de" stroke="#a15772"/>
+      <text x="${x + 13}" y="${chartHeight-6}" text-anchor="middle" font-size="11" fill="#a15772">
+        ${pad(time.getHours())}:${pad(time.getMinutes())}
+      </text>
+      <text x="${x + 13}" y="${y-4}" text-anchor="middle" font-size="11" fill="#a15772">
+        ${pvEstimate.toFixed(2)}
+      </text>
+    `;
+  });
+  svg += `<text x="10" y="${chartHeight/2}" text-anchor="start" font-size="12" fill="#a15772" transform="rotate(-90 14,${chartHeight/2})">PV (kW)</text>`;
+  svg += '</svg>';
+  const totalPV = points.reduce((sum, d) => sum + d.pvEstimate, 0);
+  svg += `<div style="margin:10px 0;text-align:center;">Total PV used in cycle: <strong>${totalPV.toFixed(2)} kW</strong></div>`;
+  return svg;
+}
+
 async function fetchForecastFromSheet() {
   const spreadsheetId = "1Aq9wucNZ5Izzxf5UQ1vKRIm19Ut5h_FRwUufZSnqIbw";
   const sheetGid = "900300745";
@@ -250,38 +263,6 @@ function isSameLocalDay(date1, date2) {
   return date1.getFullYear() === date2.getFullYear() &&
          date1.getMonth() === date2.getMonth() &&
          date1.getDate() === date2.getDate();
-}
-// PV breakdown chart
-function createPVContributionsChart(startTime, durationMinutes, forecastData) {
-  const durationMs = durationMinutes * 60 * 1000;
-  const startTs = startTime.getTime();
-  const endTs = startTs + durationMs;
-  const activeIntervals = forecastData.filter(({time}) =>
-    time.getTime() >= startTs && time.getTime() <= endTs
-  );
-  const maxPV = Math.max(...activeIntervals.map(d => d.pvEstimate), 1);
-  const chartWidth = Math.max(320, activeIntervals.length * 38);
-  const chartHeight = 100;
-  let svg = `<svg width="${chartWidth}" height="${chartHeight}" style="display:block;margin:auto;background:#fff;border-radius:8px;">`;
-  activeIntervals.forEach(({time, pvEstimate}, i) => {
-    const barHeight = (pvEstimate / maxPV) * (chartHeight - 45);
-    const x = 36 + i * 32;
-    const y = chartHeight - barHeight - 28;
-    svg += `
-      <rect x="${x}" y="${y}" width="26" height="${barHeight}" fill="#ffd6de" stroke="#a15772"/>
-      <text x="${x + 13}" y="${chartHeight-6}" text-anchor="middle" font-size="11" fill="#a15772">
-        ${time.getHours()}:${String(time.getMinutes()).padStart(2,'0')}
-      </text>
-      <text x="${x + 13}" y="${y-4}" text-anchor="middle" font-size="11" fill="#a15772">
-        ${pvEstimate.toFixed(2)}
-      </text>
-    `;
-  });
-  svg += `<text x="10" y="${chartHeight/2}" text-anchor="start" font-size="12" fill="#a15772" transform="rotate(-90 14,${chartHeight/2})">PV (kW)</text>`;
-  svg += '</svg>';
-  const totalPV = activeIntervals.reduce((sum, d) => sum + d.pvEstimate, 0);
-  svg += `<div style="margin:10px 0;text-align:center;">Total PV used in cycle: <strong>${totalPV.toFixed(2)} kW</strong></div>`;
-  return svg;
 }
 
 async function predictBestStartTimesHandler() {
@@ -310,15 +291,15 @@ async function predictBestStartTimesHandler() {
     const PV_THRESHOLD = 0.5;
 
     const todayStarts = bestStarts.filter(({ time, pvTotal }) =>
-      time > now && isSameLocalDay(time, todayDate) && pvTotal > PV_THRESHOLD
+      time >= now && isSameLocalDay(time, todayDate) && pvTotal > PV_THRESHOLD
     ).sort((a, b) => b.pvTotal - a.pvTotal);
 
     const tomorrowStarts = bestStarts.filter(({ time, pvTotal }) =>
-      time > now && isSameLocalDay(time, tomorrowDate) && pvTotal > PV_THRESHOLD
+      time >= now && isSameLocalDay(time, tomorrowDate) && pvTotal > PV_THRESHOLD
     ).sort((a, b) => b.pvTotal - a.pvTotal);
 
     const dayAfterTomorrowStarts = bestStarts.filter(({ time, pvTotal }) =>
-      time > now && isSameLocalDay(time, dayAfterTomorrowDate) && pvTotal > PV_THRESHOLD
+      time >= now && isSameLocalDay(time, dayAfterTomorrowDate) && pvTotal > PV_THRESHOLD
     ).sort((a, b) => b.pvTotal - a.pvTotal);
 
     let combined = [...todayStarts];
@@ -338,8 +319,8 @@ async function predictBestStartTimesHandler() {
       <div style="margin-bottom:0.7em; font-size:1em;">Click each time to show details for which PV values are summed.</div>
       <div id="pv-cycles-list">`;
     combined.forEach(({ time, pvTotal }, i) => {
-      let startHour = time.getHours().toString().padStart(2, '0');
-      let startMinute = time.getMinutes().toString().padStart(2, '0');
+      let startHour = pad(time.getHours());
+      let startMinute = pad(time.getMinutes());
       const dayLabel = isSameLocalDay(time, todayDate)
         ? "today" : isSameLocalDay(time, tomorrowDate)
         ? "tomorrow" : "day after tomorrow";
@@ -393,9 +374,11 @@ async function predictBestStartTimes(durationMinutes, numCycles, referenceTime, 
   function solarInWindow(startTimestamp) {
     const endTimestamp = startTimestamp + durationMs;
     let totalPV = 0;
+    // Interpolate PV for the exact start time and add all intervals after
+    totalPV += interpolatePVAt(startTimestamp, forecastData);
     forecastData.forEach(({ time, pvEstimate }) => {
       const ts = time.getTime();
-      if (ts >= startTimestamp && ts <= endTimestamp) {
+      if (ts > startTimestamp && ts <= endTimestamp) {
         totalPV += pvEstimate;
       }
     });
@@ -417,7 +400,8 @@ async function predictBestStartTimes(durationMinutes, numCycles, referenceTime, 
         break;
       }
     }
-    if (!overlap && candidate.time > referenceTime) {
+    // fix: allow candidate time >= reference time
+    if (!overlap && candidate.time >= referenceTime) {
       scheduled.push(candidate);
     }
   }
