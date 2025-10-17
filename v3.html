@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#eaf6ff" />
 <style>
   body { font-family: sans-serif; margin: 1em; background: #f9f9f9; }
-  .container { max-width: 470px; margin: auto; background: #fff; padding: 2em; border-radius: 12px; box-shadow: 0 2px 8px #0001; }
+  .container { max-width: 490px; margin: auto; background: #fff; padding: 2em; border-radius: 12px; box-shadow: 0 2px 8px #0001; }
   label { display: block; margin-top: 1em; font-weight: 500; }
   .time-input { display: flex; gap: 0.5em; align-items: center; margin-bottom: 1em; }
   .digit-control { display: flex; flex-direction: column; align-items: center; width: 2.5em; }
@@ -28,14 +28,51 @@
   #resetBtn { background: #ccc; color: #222; }
   #resetBtn:active { background: #aaa; }
   .icon-wash { width: 32px; height: 32px; vertical-align: middle; margin-right: 0.5em; }
-  .pv-breakdown-container { margin: 1em 0; padding: 6px 0; }
-  .pv-btn { background: #ffd028; color: #665300; border: none; border-radius: 6px; padding: 0.3em 0.9em; margin: 0.2em 0; cursor: pointer; font-size: 1em; }
-  .pv-btn:active { background: #ffa400; }
+
+  /* SOAP BUTTON START */
+  .pv-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: left;
+    min-height: 48px;
+    margin: 0.36em 0;
+    padding: 0.6em 1.2em 0.6em 1.1em;
+    border: none;
+    border-radius: 12px;
+    font-size: 1.06em;
+    background: linear-gradient(90deg, #ffd6de 70%, #ffbcd3 100%);
+    color: #a15772;
+    font-weight: 500;
+    box-shadow: 0 2px 6px #ffbcd321;
+    cursor: pointer;
+    transition: background 0.2s, box-shadow 0.2s;
+    position: relative;
+  }
+  .pv-btn:active, .pv-btn.open {
+    background: linear-gradient(90deg, #ffe2e9 70%, #ffd6de 100%);
+    box-shadow: 0 4px 12px #ffbcd340;
+  }
+  .pv-chevron {
+    margin-left: 1em;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    display: inline-block;
+    transition: transform 0.27s;
+  }
+  .pv-btn.open .pv-chevron {
+    transform: rotate(180deg);
+  }
+  .pv-breakdown-container { margin: 8px 0 6px 0; padding: 2px 0 14px 0; }
   @media (max-width: 520px) {
     .container { padding: 1em; }
     .icon-wash { width: 24px; height: 24px; }
     .button-row { justify-content: center; }
     .pv-breakdown-container svg { width: 100% !important; }
+    .pv-btn { font-size: 1em; }
   }
 </style>
 </head>
@@ -206,12 +243,11 @@ function isSameLocalDay(date1, date2) {
          date1.getMonth() === date2.getMonth() &&
          date1.getDate() === date2.getDate();
 }
-// Visualization function for PV contributions per cycle
+// PV breakdown chart
 function createPVContributionsChart(startTime, durationMinutes, forecastData) {
   const durationMs = durationMinutes * 60 * 1000;
   const startTs = startTime.getTime();
   const endTs = startTs + durationMs;
-  // Select relevant intervals
   const activeIntervals = forecastData.filter(({time}) =>
     time.getTime() >= startTs && time.getTime() <= endTs
   );
@@ -224,18 +260,17 @@ function createPVContributionsChart(startTime, durationMinutes, forecastData) {
     const x = 36 + i * 32;
     const y = chartHeight - barHeight - 28;
     svg += `
-      <rect x="${x}" y="${y}" width="26" height="${barHeight}" fill="#ffd028" stroke="#caa409"/>
-      <text x="${x + 13}" y="${chartHeight-6}" text-anchor="middle" font-size="11" fill="#1a253a">
+      <rect x="${x}" y="${y}" width="26" height="${barHeight}" fill="#ffd6de" stroke="#a15772"/>
+      <text x="${x + 13}" y="${chartHeight-6}" text-anchor="middle" font-size="11" fill="#a15772">
         ${time.getHours()}:${String(time.getMinutes()).padStart(2,'0')}
       </text>
-      <text x="${x + 13}" y="${y-4}" text-anchor="middle" font-size="11" fill="#555">
+      <text x="${x + 13}" y="${y-4}" text-anchor="middle" font-size="11" fill="#a15772">
         ${pvEstimate.toFixed(2)}
       </text>
     `;
   });
-  svg += `<text x="10" y="${chartHeight/2}" text-anchor="start" font-size="12" fill="#555" transform="rotate(-90 14,${chartHeight/2})">PV (kW)</text>`;
+  svg += `<text x="10" y="${chartHeight/2}" text-anchor="start" font-size="12" fill="#a15772" transform="rotate(-90 14,${chartHeight/2})">PV (kW)</text>`;
   svg += '</svg>';
-  // Show total
   const totalPV = activeIntervals.reduce((sum, d) => sum + d.pvEstimate, 0);
   svg += `<div style="margin:10px 0;text-align:center;">Total PV used in cycle: <strong>${totalPV.toFixed(2)} kW</strong></div>`;
   return svg;
@@ -256,20 +291,16 @@ async function predictBestStartTimesHandler() {
     }
     const durationMinutes = durHour * 60 + durMinute;
     const now = new Date();
-    // Fetch forecast only once for visualization!
     const forecastData = await fetchForecastFromSheet();
 
-    // Find best start times
     let bestStarts = await predictBestStartTimes(durationMinutes, MAX_RESULTS, now, forecastData);
 
-    // Set days for grouping
     const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrowDate = new Date(todayDate.getTime() + 24 * 60 * 60 * 1000);
     const dayAfterTomorrowDate = new Date(todayDate.getTime() + 2 * 24 * 60 * 60 * 1000);
 
-    const PV_THRESHOLD = 0.5; // Minimum solar PV threshold
+    const PV_THRESHOLD = 0.5;
 
-    // Filter and group by day
     const todayStarts = bestStarts.filter(({ time, pvTotal }) =>
       time > now && isSameLocalDay(time, todayDate) && pvTotal > PV_THRESHOLD
     ).sort((a, b) => b.pvTotal - a.pvTotal);
@@ -287,7 +318,6 @@ async function predictBestStartTimesHandler() {
     if (combined.length < numCycles) combined = combined.concat(dayAfterTomorrowStarts);
     combined = combined.slice(0, numCycles);
 
-    // Fallback to best available times if none meet threshold
     if (combined.length === 0) {
       combined = bestStarts.slice(0, numCycles);
       resultDiv.textContent = "No times with sufficient solar power found; showing best available times.\n\n";
@@ -295,38 +325,42 @@ async function predictBestStartTimesHandler() {
       resultDiv.textContent = "";
     }
 
-    // Display recommendations as clickable list items
-    let output = `<div>Recommended start times for ${combined.length} cycle(s):</div>`;
-    output += `<div style="margin-bottom:0.7em; font-size:1em;">Click each time to show details for which PV values are summed.</div>`;
-    output += `<div id="pv-cycles-list">`;
+    let output =
+      `<div>Recommended start times for ${combined.length} cycle(s):</div>
+      <div style="margin-bottom:0.7em; font-size:1em;">Click each time to show details for which PV values are summed.</div>
+      <div id="pv-cycles-list">`;
     combined.forEach(({ time, pvTotal }, i) => {
       let startHour = time.getHours().toString().padStart(2, '0');
       let startMinute = time.getMinutes().toString().padStart(2, '0');
       const dayLabel = isSameLocalDay(time, todayDate)
-        ? "today"
-        : isSameLocalDay(time, tomorrowDate)
-        ? "tomorrow"
-        : "day after tomorrow";
-      // Each item is a button showing the time and PV; clicking shows breakdown chart
-      output += `<button class="pv-btn" type="button" data-index="${i}">
-        ${i + 1}. ${startHour}:${startMinute} (${dayLabel}) - <strong>${pvTotal.toFixed(2)} kW</strong>
+        ? "today" : isSameLocalDay(time, tomorrowDate)
+        ? "tomorrow" : "day after tomorrow";
+      output += `
+      <button class="pv-btn" type="button" data-index="${i}">
+        <span>${i + 1}. ${startHour}:${startMinute} (${dayLabel}) - <strong>${pvTotal.toFixed(2)} kW</strong></span>
+        <span class="pv-chevron" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 22 22">
+            <polyline points="6,9 11,14 16,9" fill="none" stroke="#a15772" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </span>
       </button>
       <div class="pv-breakdown-container" id="pv-breakdown-${i}" style="display:none;"></div>`;
     });
     output += `</div>`;
     resultDiv.innerHTML = output;
 
-    // Add listeners to show charts on click
     combined.forEach(({time}, idx) => {
       document.querySelector(`.pv-btn[data-index="${idx}"]`).onclick = function() {
-        // Toggle display of chart
         const container = document.getElementById(`pv-breakdown-${idx}`);
+        const btn = this;
         if (container.style.display === "none") {
           container.innerHTML = createPVContributionsChart(time, durationMinutes, forecastData);
           container.style.display = "block";
+          btn.classList.add("open");
         } else {
           container.innerHTML = "";
           container.style.display = "none";
+          btn.classList.remove("open");
         }
       };
     });
@@ -340,7 +374,7 @@ async function predictBestStartTimesHandler() {
 async function predictBestStartTimes(durationMinutes, numCycles, referenceTime, forecastData) {
   const durationMs = durationMinutes * 60 * 1000;
   const startSearch = referenceTime.getTime();
-  const endSearch = startSearch + 72 * 60 * 60 * 1000; // 72 hours window
+  const endSearch = startSearch + 72 * 60 * 60 * 1000;
   const candidateStarts = [];
   for (let t = startSearch; t <= endSearch - durationMs; t += 15 * 60 * 1000) {
     candidateStarts.push(new Date(t));
