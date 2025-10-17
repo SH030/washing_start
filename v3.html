@@ -7,6 +7,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f9fc.png" />
 <meta name="theme-color" content="#eaf6ff" />
 <style>
+  /* Your CSS styles as described including button, chevron, tray, etc. */
   body { font-family: sans-serif; margin: 1em; background: #f9f9f9; }
   .container { max-width: 490px; margin: auto; background: #fff; padding: 2em; border-radius: 12px; box-shadow: 0 2px 8px #0001; }
   label { display: block; margin-top: 1em; font-weight: 500; }
@@ -182,6 +183,15 @@ function digitCycleHandler(e) {
   }
   e.target.value = val.toString();
 }
+// calculateStartTime to avoid missing function error
+function calculateStartTime() {
+  const solarUsed = document.getElementById('solarToggle').checked;
+  if (!solarUsed) {
+    const resultDiv = document.getElementById('result');
+    resultDiv.innerHTML = "Solar prediction not used. Use the Predict Best Start Times button.";
+  }
+}
+
 // Helper: Linear interpolation of solar PV at exact start time
 function interpolatePVAt(timeMs, forecastData) {
   let before = null, after = null;
@@ -211,10 +221,8 @@ function createPVContributionsChart(startTime, durationMinutes, forecastData) {
   const endTs = startTs + durationMs;
   const startPV = interpolatePVAt(startTs, forecastData);
 
-  // select intervals inside window, exclude start (will be interpolated)
+  // select intervals inside window with time > startTs
   const intervalsAfterStart = forecastData.filter(({time}) => time.getTime() > startTs && time.getTime() <= endTs);
-
-  // Prepend interpolated start time point
   const points = [{time: new Date(startTs), pvEstimate: startPV}].concat(intervalsAfterStart);
 
   const maxPV = Math.max(...points.map(d => d.pvEstimate), 1);
@@ -358,6 +366,7 @@ async function predictBestStartTimesHandler() {
     });
 
   } catch (error) {
+    const resultDiv = document.getElementById('result');
     resultDiv.textContent = "Error calculating prediction: " + error.message;
     console.error("Prediction error: ", error);
   }
@@ -374,8 +383,7 @@ async function predictBestStartTimes(durationMinutes, numCycles, referenceTime, 
   function solarInWindow(startTimestamp) {
     const endTimestamp = startTimestamp + durationMs;
     let totalPV = 0;
-    // Interpolate PV for the exact start time and add all intervals after
-    totalPV += interpolatePVAt(startTimestamp, forecastData);
+    totalPV += interpolatePVAt(startTimestamp, forecastData); // Interpolate exact start PV
     forecastData.forEach(({ time, pvEstimate }) => {
       const ts = time.getTime();
       if (ts > startTimestamp && ts <= endTimestamp) {
@@ -400,7 +408,6 @@ async function predictBestStartTimes(durationMinutes, numCycles, referenceTime, 
         break;
       }
     }
-    // fix: allow candidate time >= reference time
     if (!overlap && candidate.time >= referenceTime) {
       scheduled.push(candidate);
     }
