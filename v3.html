@@ -7,9 +7,8 @@
 <link rel="icon" type="image/png" sizes="192x192" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f9fc.png" />
 <meta name="theme-color" content="#eaf6ff" />
 <style>
-  /* Your CSS styles as described including button, chevron, tray, etc. */
   body { font-family: sans-serif; margin: 1em; background: #f9f9f9; }
-  .container { max-width: 490px; margin: auto; background: #fff; padding: 2em; border-radius: 12px; box-shadow: 0 2px 8px #0001; }
+  .container { max-width: 470px; margin: auto; background: #fff; padding: 2em; border-radius: 12px; box-shadow: 0 2px 8px #0001; }
   label { display: block; margin-top: 1em; font-weight: 500; }
   .time-input { display: flex; gap: 0.5em; align-items: center; margin-bottom: 1em; }
   .digit-control { display: flex; flex-direction: column; align-items: center; width: 2.5em; }
@@ -29,10 +28,14 @@
   #resetBtn { background: #ccc; color: #222; }
   #resetBtn:active { background: #aaa; }
   .icon-wash { width: 32px; height: 32px; vertical-align: middle; margin-right: 0.5em; }
+
+  /* Remove whitespace gaps between buttons */
   #pv-cycles-list {
     font-size: 0;
   }
+
   .pv-btn {
+    font-size: 1rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -44,10 +47,9 @@
     padding: 0.6em 1.2em 0.6em 1.1em;
     border: none;
     border-radius: 12px;
-    font-size: 1rem;
+    font-weight: 500;
     background: linear-gradient(90deg, #ffd6de 70%, #ffbcd3 100%);
     color: #a15772;
-    font-weight: 500;
     box-shadow: 0 2px 6px #ffbcd321;
     cursor: pointer;
     transition: background 0.2s, box-shadow 0.2s;
@@ -77,18 +79,19 @@
     height: 22px;
   }
   .pv-breakdown-container {
-    margin: 8px 0 14px 0;
+    margin-top: 2px;
+    margin-bottom: 14px;
     padding: 12px 16px;
     background: #ffe6eb;
     border-radius: 10px;
     box-shadow: inset 0 0 8px #fcb6bfaa;
+    font-size: 1rem;
   }
-  @media (max-width: 520px) {
+
+  @media (max-width: 500px) {
     .container { padding: 1em; }
     .icon-wash { width: 24px; height: 24px; }
     .button-row { justify-content: center; }
-    .pv-breakdown-container svg { width: 100% !important; }
-    .pv-btn { font-size: 1em; }
   }
 </style>
 </head>
@@ -100,14 +103,17 @@ window.onerror = function(msg, src, line, col, err) {
 };
 
 function pad(n) { return n.toString().padStart(2, '0'); }
+
 function setHourDigits(prefix, hour) {
   document.getElementById(prefix + 'HourTens').value = String(Math.floor(hour / 10));
   document.getElementById(prefix + 'HourOnes').value = String(hour % 10);
 }
+
 function setMinuteDigits(prefix, minute) {
   document.getElementById(prefix + 'MinuteTens').value = String(Math.floor(minute / 10));
   document.getElementById(prefix + 'MinuteOnes').value = String(minute % 10);
 }
+
 function getTimeFromDigits(prefix) {
   const hour = parseInt(document.getElementById(prefix + 'HourTens').value, 10) * 10 +
                parseInt(document.getElementById(prefix + 'HourOnes').value, 10);
@@ -115,6 +121,7 @@ function getTimeFromDigits(prefix) {
                  parseInt(document.getElementById(prefix + 'MinuteOnes').value, 10);
   return [hour, minute];
 }
+
 function setDefaults() {
   const now = new Date();
   let h = now.getHours();
@@ -126,18 +133,21 @@ function setDefaults() {
   setHourDigits('duration', 2);
   setMinuteDigits('duration', 39);
 }
+
 function changeHour(prefix, delta) {
   let [hour, ] = getTimeFromDigits(prefix);
   hour = (hour + delta + 24) % 24;
   setHourDigits(prefix, hour);
   calculateStartTime();
 }
+
 function changeMinute(prefix, delta) {
   let [, minute] = getTimeFromDigits(prefix);
   minute = (minute + delta + 60) % 60;
   setMinuteDigits(prefix, minute);
   calculateStartTime();
 }
+
 function digitInputHandler(e, prefix, type) {
   let tensId = prefix + (type === 'hour' ? 'HourTens' : 'MinuteTens');
   let onesId = prefix + (type === 'hour' ? 'HourOnes' : 'MinuteOnes');
@@ -157,16 +167,19 @@ function digitInputHandler(e, prefix, type) {
   }
   calculateStartTime();
 }
+
 function toggleSolarUsage() {
   const solarUsed = document.getElementById('solarToggle').checked;
   document.getElementById('finishTimeGroup').style.display = solarUsed ? 'none' : 'block';
   document.getElementById('cyclesInput').style.display = solarUsed ? 'block' : 'none';
   Array.from(document.querySelectorAll('#finishTimeGroup input,#finishTimeGroup button')).forEach(el => el.disabled = solarUsed);
+  
   if(solarUsed){
     document.getElementById('numCycles').value = '1';
   }
   calculateStartTime();
 }
+
 function changeCycle(delta) {
   const el = document.getElementById('numCycles');
   let val = parseInt(el.value, 10);
@@ -176,6 +189,7 @@ function changeCycle(delta) {
   if (val > 10) val = 10;
   el.value = val.toString();
 }
+
 function digitCycleHandler(e) {
   let val = parseInt(e.target.value, 10);
   if (isNaN(val) || val < 1) {
@@ -185,30 +199,77 @@ function digitCycleHandler(e) {
   }
   e.target.value = val.toString();
 }
-// calculateStartTime to avoid missing function error
+
+function displayResult(startDate, now, durationMins) {
+  const timerSettings = [];
+  for (let h = 0; h <= 10; h++) {
+    if (h > 0) timerSettings.push(h * 60);
+    if (h < 10) timerSettings.push(h * 60 + 30);
+  }
+  for (let h = 11; h <= 24; h++) {
+    timerSettings.push(h * 60);
+  }
+  let startHour = startDate.getHours().toString().padStart(2, '0');
+  let startMinute = startDate.getMinutes().toString().padStart(2, '0');
+  let diffMs = startDate.getTime() - now.getTime();
+  let diffMins = Math.round(diffMs / (1000 * 60));
+  let diffHours = Math.floor(diffMins / 60);
+  let diffMinutes = diffMins % 60;
+  let exactStartIn = `${diffHours} hour(s) and ${diffMinutes} minute(s) from now`;
+  let roundedDownSetting = null;
+  for (let i = timerSettings.length - 1; i >= 0; i--) {
+    if (timerSettings[i] <= diffMins) {
+      roundedDownSetting = timerSettings[i];
+      break;
+    }
+  }
+  let roundedDownStr = roundedDownSetting !== null ?
+    `${Math.floor(roundedDownSetting / 60)}:${pad(roundedDownSetting % 60)}` : "No suitable timer setting";
+  document.getElementById('result').innerHTML =
+    `<div>Closest round down timer setting:</div>` +
+    `<h2>${roundedDownStr}</h2>` +
+    `<div><strong>Start the washing machine at:</strong> ${startHour}:${startMinute}</div>` +
+    `<div><strong>Actual start in:</strong> ${exactStartIn}</div>`;
+}
+
 function calculateStartTime() {
   const solarUsed = document.getElementById('solarToggle').checked;
+  const resultDiv = document.getElementById('result');
+  resultDiv.innerHTML = "";
+  const [durHour, durMinute] = getTimeFromDigits('duration');
+  if (durHour > 23 || durMinute > 59) return resultDiv.innerHTML = "Please enter a valid duration.";
+  const durationMins = durHour * 60 + durMinute;
+  const now = new Date();
   if (!solarUsed) {
-    const resultDiv = document.getElementById('result');
-    resultDiv.innerHTML = "Solar prediction not used. Use the Predict Best Start Times button.";
+    const [finishHour, finishMinute] = getTimeFromDigits('finish');
+    if (finishHour > 23 || finishMinute > 59) return resultDiv.innerHTML = "Please enter a valid finish time.";
+    let finishDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), finishHour, finishMinute);
+    if (finishDate <= now) finishDate.setDate(finishDate.getDate() + 1);
+    let startDate = new Date(finishDate.getTime() - durationMins * 60 * 1000);
+    while (startDate <= now) {
+      startDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
+    }
+    displayResult(startDate, now, durationMins);
+  } else {
+    resultDiv.innerHTML = "Solar prediction is active. Use the 🔆 Predict Best Start Times button.";
   }
 }
 
-// Helper: Linear interpolation of solar PV at exact start time
+// Linear interpolation for solar PV at start time
 function interpolatePVAt(timeMs, forecastData) {
   let before = null, after = null;
-  for(let i=0; i<forecastData.length-1; i++) {
+  for(let i=0; i < forecastData.length - 1; i++) {
     const t0 = forecastData[i].time.getTime();
-    const t1 = forecastData[i+1].time.getTime();
-    if(t0 <= timeMs && t1 >= timeMs) {
+    const t1 = forecastData[i + 1].time.getTime();
+    if (t0 <= timeMs && t1 >= timeMs) {
       before = forecastData[i];
-      after = forecastData[i+1];
+      after = forecastData[i + 1];
       break;
     }
   }
   if (!before || !after) {
-    if(before) return before.pvEstimate;
-    if(after) return after.pvEstimate;
+    if (before) return before.pvEstimate;
+    if (after) return after.pvEstimate;
     return 0;
   }
   const dt = after.time.getTime() - before.time.getTime();
@@ -216,14 +277,13 @@ function interpolatePVAt(timeMs, forecastData) {
   const fraction = (timeMs - before.time.getTime()) / dt;
   return before.pvEstimate + dpv * fraction;
 }
-// Render chart with interpolated start PV and subsequent intervals
+
+// Draw PV bar chart with interpolated start PV
 function createPVContributionsChart(startTime, durationMinutes, forecastData) {
   const durationMs = durationMinutes * 60 * 1000;
   const startTs = startTime.getTime();
   const endTs = startTs + durationMs;
   const startPV = interpolatePVAt(startTs, forecastData);
-
-  // select intervals inside window with time > startTs
   const intervalsAfterStart = forecastData.filter(({time}) => time.getTime() > startTs && time.getTime() <= endTs);
   const points = [{time: new Date(startTs), pvEstimate: startPV}].concat(intervalsAfterStart);
 
@@ -247,12 +307,13 @@ function createPVContributionsChart(startTime, durationMinutes, forecastData) {
     `;
   });
   svg += `<text x="10" y="${chartHeight/2}" text-anchor="start" font-size="12" fill="#a15772" transform="rotate(-90 14,${chartHeight/2})">PV (kW)</text>`;
-  svg += '</svg>';
+  svg += `</svg>`;
   const totalPV = points.reduce((sum, d) => sum + d.pvEstimate, 0);
   svg += `<div style="margin:10px 0;text-align:center;">Total PV used in cycle: <strong>${totalPV.toFixed(2)} kW</strong></div>`;
   return svg;
 }
 
+// Fetch forecast data from Google Sheet CSV export
 async function fetchForecastFromSheet() {
   const spreadsheetId = "1Aq9wucNZ5Izzxf5UQ1vKRIm19Ut5h_FRwUufZSnqIbw";
   const sheetGid = "900300745";
@@ -269,6 +330,7 @@ async function fetchForecastFromSheet() {
     };
   });
 }
+
 function isSameLocalDay(date1, date2) {
   return date1.getFullYear() === date2.getFullYear() &&
          date1.getMonth() === date2.getMonth() &&
@@ -348,8 +410,8 @@ async function predictBestStartTimesHandler() {
     output += `</div>`;
     resultDiv.innerHTML = output;
 
-    combined.forEach(({time}, idx) => {
-      document.querySelector(`.pv-btn[data-index="${idx}"]`).onclick = function() {
+    combined.forEach(({ time }, idx) => {
+      document.querySelector(`.pv-btn[data-index="${idx}"]`).onclick = function () {
         const container = document.getElementById(`pv-breakdown-${idx}`);
         const btn = this;
         const expanded = btn.getAttribute('aria-expanded') === 'true';
@@ -368,7 +430,6 @@ async function predictBestStartTimesHandler() {
     });
 
   } catch (error) {
-    const resultDiv = document.getElementById('result');
     resultDiv.textContent = "Error calculating prediction: " + error.message;
     console.error("Prediction error: ", error);
   }
@@ -385,7 +446,7 @@ async function predictBestStartTimes(durationMinutes, numCycles, referenceTime, 
   function solarInWindow(startTimestamp) {
     const endTimestamp = startTimestamp + durationMs;
     let totalPV = 0;
-    totalPV += interpolatePVAt(startTimestamp, forecastData); // Interpolate exact start PV
+    totalPV += interpolatePVAt(startTimestamp, forecastData);
     forecastData.forEach(({ time, pvEstimate }) => {
       const ts = time.getTime();
       if (ts > startTimestamp && ts <= endTimestamp) {
@@ -394,7 +455,10 @@ async function predictBestStartTimes(durationMinutes, numCycles, referenceTime, 
     });
     return totalPV;
   }
-  const candidates = candidateStarts.map(dt => ({ time: dt, pvTotal: solarInWindow(dt.getTime()) }));
+  const candidates = candidateStarts.map(dt => ({
+    time: dt,
+    pvTotal: solarInWindow(dt.getTime())
+  }));
   candidates.sort((a, b) => b.pvTotal - a.pvTotal);
   const scheduled = [];
   for (const candidate of candidates) {
@@ -416,6 +480,7 @@ async function predictBestStartTimes(durationMinutes, numCycles, referenceTime, 
   }
   return scheduled;
 }
+
 function attachListeners() {
   document.getElementById('finishHourUp').onclick = () => changeHour('finish', 1);
   document.getElementById('finishHourDown').onclick = () => changeHour('finish', -1);
@@ -446,12 +511,14 @@ function attachListeners() {
     }, 50);
   };
 }
+
 document.addEventListener('DOMContentLoaded', function() {
   setDefaults();
   attachListeners();
   toggleSolarUsage();
 });
 </script>
+
 <div class="container" role="main">
   <h3>
     <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f9fc.png" alt="Washing Machine" class="icon-wash" />
