@@ -321,19 +321,33 @@ function createPVContributionsChart(startTime, durationMinutes, forecastData) {
   let svg = `<svg width="${chartWidth}" height="${chartHeight}" style="display:block;margin:auto;background:#fff;border-radius:8px;overflow-x:auto;">`;
   let xCursor = 36;
   slices.forEach((d, i) => {
-    const barWidth = Math.max(minWidth, d.durationMs * pxPerMs);
-    const barHeight = (d.avgPV / maxPV) * (chartHeight - 56);
-    const y = chartHeight - barHeight - 50;
-    const fill = d.isStart || d.isEnd ? "#fff4c2" : "#ffd6de";
-    const labelTxt = d.isStart ? "Start (interp)" : d.isEnd ? "End (interp)" : "";
-    if (labelTxt) svg += `<text x="${xCursor + barWidth / 2}" y="${y - 11}" text-anchor="middle" font-size="11" fill="#caad42">${labelTxt}</text>`;
-    svg += `
-      <rect x="${xCursor}" y="${y}" width="${barWidth}" height="${barHeight}" fill="${fill}" stroke="#a15772">
-      <title>${d.kWh.toFixed(3)} kWh (${d.avgPV.toFixed(2)} kW × ${Math.round(d.durationMs / 60000)}min)</title></rect>
-      <text x="${xCursor + barWidth / 2}" y="${chartHeight - 21}" text-anchor="middle" font-size="11" fill="#a15772">${pad(d.start.getHours())}:${pad(d.start.getMinutes())}</text>
-      <text x="${xCursor + barWidth / 2}" y="${y - 4}" text-anchor="middle" font-size="11" fill="#a15772">${d.avgPV.toFixed(2)}</text>`;
-    xCursor += barWidth + barGap;
-  });
+  const barWidth = Math.max(minWidth, d.durationMs * pxPerMs);
+  const barHeight = (d.avgPV / maxPV) * (chartHeight - 56);
+  const y = chartHeight - barHeight - 50;
+  const fill = d.isStart || d.isEnd ? "#fff4c2" : "#ffd6de";
+  const labelTxt = d.isStart ? "Start (interp)" : d.isEnd ? "End (interp)" : "";
+  if (labelTxt) {
+    svg += `<text x="${xCursor + barWidth / 2}" y="${y - 11}" text-anchor="middle" font-size="11" fill="#caad42">${labelTxt}</text>`;
+  }
+
+  // Draw a white rounded rect behind two-line time label
+  const rectHeight = 32;
+  const rectWidth = Math.max(40, barWidth);
+  const rectX = xCursor + barWidth / 2 - rectWidth / 2;
+  const rectY = chartHeight - 43;
+
+  svg += `<rect x="${rectX}" y="${rectY}" width="${rectWidth}" height="${rectHeight}" fill="#fff" stroke="#a15772" rx="4" ry="4"></rect>`;
+  svg += `<text x="${xCursor + barWidth / 2}" y="${rectY + 13}" text-anchor="middle" font-size="11" fill="#a15772">${pad(d.start.getHours())}:${pad(d.start.getMinutes())}</text>`;
+  svg += `<text x="${xCursor + barWidth / 2}" y="${rectY + 28}" text-anchor="middle" font-size="11" fill="#a15772">${pad(d.end.getHours())}:${pad(d.end.getMinutes())}</text>`;
+
+  svg += `
+    <rect x="${xCursor}" y="${y}" width="${barWidth}" height="${barHeight}" fill="${fill}" stroke="#a15772">
+    <title>${d.kWh.toFixed(3)} kWh (${d.avgPV.toFixed(2)} kW × ${Math.round(d.durationMs / 60000)}min)</title></rect>
+    <text x="${xCursor + barWidth / 2}" y="${y - 4}" text-anchor="middle" font-size="11" fill="#a15772">
+      ${d.avgPV.toFixed(2)}
+    </text>`;
+  xCursor += barWidth + barGap;
+});
   svg += `<text x="10" y="${chartHeight / 2}" text-anchor="start" font-size="12" fill="#a15772" transform="rotate(-90 14,${chartHeight / 2})">PV (kW)</text>`;
   svg += "</svg>";
   const totalKWh = slices.reduce((sum, d) => sum + d.kWh, 0);
