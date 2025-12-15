@@ -363,7 +363,12 @@ function createPVContributionsChart(startTime, durationMinutes, forecastData) {
 async function fetchForecastFromSheet() {
   const response = await fetch('https://tight-boat-fa78.sanderspam030-cloudflare.workers.dev/forecast');
   if (!response.ok) throw new Error("Worker fetch failed");
-  return response.json();
+  const data = await response.json();
+  // Convert string timestamps back to Date objects for your existing code
+  return data.map(row => ({
+    time: new Date(row.time),
+    pvEstimate: row.pvEstimate
+  }));
 }
 
 function isSameLocalDay(date1, date2) {
