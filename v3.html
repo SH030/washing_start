@@ -361,20 +361,9 @@ function createPVContributionsChart(startTime, durationMinutes, forecastData) {
 
 // Fetch forecast data from Google Sheet CSV export
 async function fetchForecastFromSheet() {
-  const spreadsheetId = "1Aq9wucNZ5Izzxf5UQ1vKRIm19Ut5h_FRwUufZSnqIbw";
-  const sheetGid = "900300745";
-  const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${sheetGid}`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error("Failed to fetch sheet data");
-  const csvText = await response.text();
-  const rows = csvText.trim().split('\n').slice(1);
-  return rows.map(row => {
-    const [timestamp, pvEstimate] = row.split(',');
-    return {
-      time: new Date(timestamp),
-      pvEstimate: parseFloat(pvEstimate)
-    };
-  });
+  const response = await fetch('https://tight-boat-fa78.sanderspam030-cloudflare.workers.dev/forecast');
+  if (!response.ok) throw new Error("Worker fetch failed");
+  return response.json();
 }
 
 function isSameLocalDay(date1, date2) {
