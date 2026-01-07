@@ -403,6 +403,22 @@ function createFullForecastChart(forecastData, now) {
   .filter(d => d.time >= now && d.time <= endTime && d.pvEstimate > 0)
   .sort((a, b) => a.time.getTime() - b.time.getTime());
 
+// Detect gaps > 2 hours between points
+const gaps = [];
+for (let i = 1; i < relevantData.length; i++) {
+  const gapMs = relevantData[i].time.getTime() - relevantData[i-1].time.getTime();
+  if (gapMs > 2 * 60 * 60 * 1000) { // > 2 hours
+    gaps.push({
+      start: relevantData[i-1].time.getTime(),
+      end: relevantData[i].time.getTime(),
+      duration: gapMs
+    });
+  }
+}
+
+  const totalNonGapTime = relevantData[relevantData.length-1].time.getTime() - relevantData[0].time.getTime() -
+  gaps.reduce((sum, gap) => sum + gap.duration, 0);
+
   if (relevantData.length === 0) {
   return '<div style="text-align:center;color:#666;">No solar production expected in next 48 hours</div>';
 }
@@ -428,33 +444,55 @@ function createFullForecastChart(forecastData, now) {
   // X-axis label
   svg += `<text x="${chartWidth/2}" y="${chartHeight - 10}" text-anchor="middle" font-size="12" fill="#667eea">Time (Next 48 hours)</text>`;
 
-  // Plot line and points
-  relevantData.forEach((point, i) => {
-    const x = padding + (point.time.getTime() - relevantData[0].time.getTime()) * pxPerMs;
-    const y = chartHeight - padding - (point.pvEstimate / maxPV) * plotHeight;
-    
-    // Point
-    svg += `<circle cx="${x}" cy="${y}" r="5" fill="#667eea" stroke="white" stroke-width="3">
-              <title>${pad(point.time.getHours())}:${pad(point.time.getMinutes())} - ${point.pvEstimate.toFixed(2)} kW</title>
-            </circle>`;
-    
-    // If not first point, draw line to previous
-    if (i > 0) {
-      const prevPoint = relevantData[i-1];
-      const prevX = padding + (prevPoint.time.getTime() - relevantData[0].time.getTime()) * pxPerMs;
-      const prevY = chartHeight - padding - (prevPoint.pvEstimate / maxPV) * plotHeight;
-      svg += `<line x1="${prevX}" y1="${prevY}" x2="${x}" y2="${y}" stroke="#667eea" stroke-width="3" stroke-linecap="round"/>`;
-    }
-  });
+  let cumulativeTime = 0;
+let xPositions = [];
 
-  // Time markers
-  relevantData.forEach((point, i) => {
-  const x = padding + (point.time.getTime() - relevantData[0].time.getTime()) * pxPerMs;
-  const timeStr = `${pad(point.time.getHours())}:${pad(point.time.getMinutes())}`;
-  svg += `<text x="${x}" y="${chartHeight - 8}" text-anchor="middle" font-size="10" fill="#444" font-weight="600">${timeStr}</text>`;
+relevantData.forEach((point, i) => {
+  const x = padding + (cumulativeTime / totalNonGapTime) * plotWidth;
+  xPositions[relevantData.indexOf(point)] = x;
   
-  // Vertical line at each data point for easy reading
-  svg += `<line x1="${x}" y1="${chartHeight - padding}" x2="${x}" y2="${padding}" stroke="#e0e0e0" stroke-width="1" stroke-dasharray="2,2"/>`;
+  const y = chartHeight - padding - (point.pvEstimate / maxPV) * plotHeight;
+  
+  // Point with time label ABOVE the point (more visible)
+  svg += `<g transform="translate(${x}, ${y})">
+            <circle r="6" fill="#667eea" stroke="white" stroke-width="3">
+              <title>${pad(point.time.getHours())}:${pad(point.time.getMinutes())} ${point.pvEstimate.toFixed(2)} kW</title>
+            </circle>
+            <text y="-12" text-anchor="middle" class="data-point-label">${pad(point.time.getHours())}:${pad(point.time.getMinutes())}</text>
+          </g>`;
+  
+  // Vertical reference line
+  svg += `<line x1="${x}" y1="${chartHeight - padding}" x2="${x}" y2="${padding}" stroke="#e8e8e8" stroke-width="1" stroke-dasharray="3,3"/>`;
+  
+  if (i > 0) {
+    const prevX = xPositions[relevantData.indexOf(relevantData[i-1])];
+    svg += `<line x1="${prevX}" y1="${chartHeight - padding - (relevantData[i-1].pvEstimate / maxPV) * plotHeight}" 
+                   x2="${x}" y2="${y}" stroke="#667eea" stroke-width="4" stroke-linecap="round"/>`;
+  }
+  
+  cumulativeTime += point.time.getTime() - (i === 0 ? relevantData[0].time.getTime() : relevantData[i-1].time.getTime());
+});
+
+// Draw scale break symbols in gaps
+gaps.forEach((gap, i) => {
+  const gapStartX = xPositions[relevantData.findIndex(d => d.time.getTime() === gap.start)];
+  const gapEndX = xPositions[relevantData.findIndex(d => d.time.getTime() === gap.end)];
+  const gapMidX = (gapStartX + gapEndX) / 2;
+  
+  // Zigzag break symbol
+  const breakPoints = [
+    [gapMidX - 8, chartHeight - padding + 4],
+    [gapMidX - 2, chartHeight - padding - 4],
+    [gapMidX + 4, chartHeight - padding + 4],
+    [gapMidX + 10, chartHeight - padding - 4]
+  ];
+  
+  svg += `<polyline points="${breakPoints.map(p => `${p[0]},${p[1]}`).join(' ')}" 
+                  fill="none" stroke="#ff6b6b" stroke-width="3" stroke-linecap="round"/>`;
+  
+  // Break label
+  svg += `<text x="${gapMidX}" y="${chartHeight - padding + 25}" text-anchor="middle" 
+                  font-size="10" fill="#ff6b6b" font-weight="600">⏸ GAP</text>`;
 });
 
 // Add major hour markers below
