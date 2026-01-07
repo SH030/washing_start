@@ -399,11 +399,13 @@ function createFullForecastChart(forecastData, now) {
 
   // Filter data to next 48 hours from now
   const endTime = new Date(now.getTime() + 48 * 60 * 60 * 1000);
-  const relevantData = forecastData.filter(d => d.time >= now && d.time <= endTime);
+  const relevantData = forecastData
+  .filter(d => d.time >= now && d.time <= endTime && d.pvEstimate > 0)
+  .sort((a, b) => a.time.getTime() - b.time.getTime());
 
   if (relevantData.length === 0) {
-    return '<div style="text-align:center;color:#666;">No forecast data for next 48 hours</div>';
-  }
+  return '<div style="text-align:center;color:#666;">No solar production expected in next 48 hours</div>';
+}
 
   const timeRange = relevantData[relevantData.length - 1].time.getTime() - relevantData[0].time.getTime();
   const pxPerMs = plotWidth / timeRange;
@@ -432,7 +434,7 @@ function createFullForecastChart(forecastData, now) {
     const y = chartHeight - padding - (point.pvEstimate / maxPV) * plotHeight;
     
     // Point
-    svg += `<circle cx="${x}" cy="${y}" r="4" fill="#667eea" stroke="white" stroke-width="2">
+    svg += `<circle cx="${x}" cy="${y}" r="5" fill="#667eea" stroke="white" stroke-width="3">
               <title>${pad(point.time.getHours())}:${pad(point.time.getMinutes())} - ${point.pvEstimate.toFixed(2)} kW</title>
             </circle>`;
     
@@ -446,15 +448,24 @@ function createFullForecastChart(forecastData, now) {
   });
 
   // Time markers
-  const hours = [6, 12, 18, 24];
-  hours.forEach(hourOffset => {
-    const markerTime = new Date(relevantData[0].time.getTime() + hourOffset * 60 * 60 * 1000);
-    const x = padding + (markerTime.getTime() - relevantData[0].time.getTime()) * pxPerMs;
-    if (x >= padding && x <= chartWidth - padding) {
-      const hourStr = pad(markerTime.getHours());
-      svg += `<text x="${x}" y="${chartHeight - 15}" text-anchor="middle" font-size="11" fill="#666">${hourStr}:00</text>`;
-    }
-  });
+  relevantData.forEach((point, i) => {
+  const x = padding + (point.time.getTime() - relevantData[0].time.getTime()) * pxPerMs;
+  const timeStr = `${pad(point.time.getHours())}:${pad(point.time.getMinutes())}`;
+  svg += `<text x="${x}" y="${chartHeight - 8}" text-anchor="middle" font-size="10" fill="#444" font-weight="600">${timeStr}</text>`;
+  
+  // Vertical line at each data point for easy reading
+  svg += `<line x1="${x}" y1="${chartHeight - padding}" x2="${x}" y2="${padding}" stroke="#e0e0e0" stroke-width="1" stroke-dasharray="2,2"/>`;
+});
+
+// Add major hour markers below
+const majorHours = [0, 6, 12, 18, 24];
+majorHours.forEach(hourOffset => {
+  const markerTime = new Date(relevantData[0].time.getTime() + hourOffset * 60 * 60 * 1000);
+  const x = padding + (markerTime.getTime() - relevantData[0].time.getTime()) * pxPerMs;
+  if (x >= padding && x <= chartWidth - padding) {
+    svg += `<text x="${x}" y="${chartHeight - 2}" text-anchor="middle" font-size="11" fill="#667eea" font-weight="700">${pad(markerTime.getHours())}h</text>`;
+  }
+});
 
   svg += `</svg>`;
   
