@@ -392,171 +392,103 @@ function createFullForecastChart(forecastData, now) {
 
   const chartWidth = 420;
   const chartHeight = 200;
-  const maxPV = Math.max(...forecastData.map(d => d.pvEstimate));
   const padding = 40;
   const plotWidth = chartWidth - padding * 2;
   const plotHeight = chartHeight - padding * 1.5;
 
-  // Filter data to next 48 hours from now
+  // Filter to next 48 hours, only PV > 0.01kW (winter sensitivity)
   const endTime = new Date(now.getTime() + 48 * 60 * 60 * 1000);
   const relevantData = forecastData
-    .filter(d => d.time >= now && d.time <= endTime && d.pvEstimate > 0)
+    .filter(d => d.time >= now && d.time <= endTime && d.pvEstimate > 0.01)
     .sort((a, b) => a.time.getTime() - b.time.getTime());
 
   if (relevantData.length === 0) {
-    return '<div style="text-align:center;color:#666;">No solar production expected in next 48 hours</div>';
+    return '<div style="text-align:center;color:#666;">No solar production expected</div>';
   }
 
-  // Detect gaps > 2 hours between points
-  const gaps = [];
-  for (let i = 1; i < relevantData.length; i++) {
-    const gapMs = relevantData[i].time.getTime() - relevantData[i-1].time.getTime();
-    if (gapMs > 2 * 60 * 60 * 1000) { // > 2 hours
-      gaps.push({
-        start: relevantData[i-1].time.getTime(),
-        end: relevantData[i].time.getTime(),
-        duration: gapMs,
-        startIndex: i-1,
-        endIndex: i
-      });
-    }
-  }
-
-  // Calculate total non-gap time for compression
-  const totalNonGapTime = relevantData[relevantData.length-1].time.getTime() - relevantData[0].time.getTime() -
-    gaps.reduce((sum, gap) => sum + gap.duration, 0);
-  const pxPerNonGapMs = plotWidth / totalNonGapTime;
+  const maxPV = Math.max(...relevantData.map(d => d.pvEstimate));
+  const totalTimeSpan = relevantData[relevantData.length-1].time.getTime() - relevantData[0].time.getTime();
 
   let svg = `<svg width="${chartWidth}" height="${chartHeight}" class="forecast-svg" viewBox="0 0 ${chartWidth} ${chartHeight}">`;
   
-  // Background grid (compressed spacing)
+  // Grid lines
   for (let i = 0; i <= 5; i++) {
     const y = padding + (plotHeight / 5) * i;
     svg += `<line x1="${padding}" y1="${chartHeight - y}" x2="${chartWidth - padding}" y2="${chartHeight - y}" stroke="#f0f0f0" stroke-width="1"/>`;
   }
 
-  // Calculate X positions with compression
-  const xPositions = [];
-  let cumulativeNonGapTime = 0;
-  
+  // **FIXED: Linear time positioning (no compression)**
+  const xPositions = relevantData.map((point, i) => 
+    padding + (point.time.getTime() - relevantData[0].time.getTime()) / totalTimeSpan * plotWidth
+  );
+
+  // Draw data points and lines FIRST
   relevantData.forEach((point, i) => {
-    // Time since previous point (excluding gaps)
-    const timeSincePrev = i === 0 ? 0 : point.time.getTime() - relevantData[i-1].time.getTime();
-    const isGapStart = gaps.find(g => g.endIndex === i);
-    if (isGapStart) {
-      cumulativeNonGapTime += isGapStart.duration; // Skip gap duration
+    const x = xPositions[i];
+    const y = chartHeight - padding - (point.pvEstimate / maxPV) * plotHeight;
+    
+    svg += `<g transform="translate(${x}, ${y})">
+      <circle r="5" fill="#667eea" stroke="white" stroke-width="2">
+        <title>${pad(point.time.getHours())}:${pad(point.time.getMinutes())} ${point.pvEstimate.toFixed(2)} kW</title>
+      </circle>`;
+    
+    // Vertical reference line
+    svg += `<line x1="${x}" y1="${chartHeight - padding}" x2="${x}" y2="${padding}" stroke="#e8e8e8" stroke-width="1" stroke-dasharray="2,2"/>`;
+    
+    // Connecting line to previous point
+    if (i > 0) {
+      const prevX = xPositions[i-1];
+      const prevY = chartHeight - padding - (relevantData[i-1].pvEstimate / maxPV) * plotHeight;
+      svg += `<line x1="${prevX}" y1="${prevY}" x2="${x}" y2="${y}" stroke="#667eea" stroke-width="3" stroke-linecap="round"/>`;
     }
-    xPositions[i] = padding + (cumulativeNonGapTime / totalNonGapTime) * plotWidth;
-    cumulativeNonGapTime += timeSincePrev;
-  });
-
-  // 1. Draw gap truncation backgrounds FIRST (behind everything)
-const ONE_HOUR_WIDTH = pxPerNonGapMs * (60 * 60 * 1000); // Fixed 1-hour width
-gaps.forEach(gap => {
-  const gapStartX = xPositions[gap.startIndex];
-  const gapEndX = Math.min(xPositions[gap.endIndex], gapStartX + ONE_HOUR_WIDTH);
-  const gapWidth = gapEndX - gapStartX;
-  
-    // Vertical truncation background (faded diagonal pattern)
-    svg += `
-      <defs>
-        <pattern id="trunc-${gap.start}" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
-          <rect width="20" height="20" fill="#ffe6e6"/>
-          <line x1="0" y1="0" x2="20" y2="20" stroke="#ff9999" stroke-width="2" stroke-opacity="0.6"/>
-          <line x1="0" y1="20" x2="20" y2="0" stroke="#ff9999" stroke-width="2" stroke-opacity="0.6"/>
-        </pattern>
-      </defs>
-      <rect x="${gapStartX}" y="${padding}" width="${gapWidth}" height="${plotHeight}" fill="url(#trunc-${gap.start})" opacity="0.7"/>
-    `;
-  });
-
-  // 2. Draw data points and lines (on top of backgrounds)
-relevantData.forEach((point, i) => {
-  const x = xPositions[i];
-  const y = chartHeight - padding - (point.pvEstimate / maxPV) * plotHeight;
-  
-  // Data point with label ONLY every 2nd hour (00, 02, 04, etc.)
-  const hour = point.time.getHours();
-  const showLabel = hour % 2 === 0;
-  
-  svg += `<g transform="translate(${x}, ${y})">
-          <circle r="6" fill="#667eea" stroke="white" stroke-width="3">
-            <title>${pad(point.time.getHours())}:${pad(point.time.getMinutes())} ${point.pvEstimate.toFixed(2)} kW</title>
-          </circle>`;
-
-// ✅ ADD: Vertical reference line
-svg += `<line x1="${x}" y1="${chartHeight - padding}" x2="${x}" y2="${padding}" stroke="#e8e8e8" stroke-width="1" stroke-dasharray="3,3"/>`;
-
-// ✅ ADD: Connecting line to previous point
-if (i > 0) {
-  const prevX = xPositions[i-1];
-  const prevY = chartHeight - padding - (relevantData[i-1].pvEstimate / maxPV) * plotHeight;
-  svg += `<line x1="${prevX}" y1="${prevY}" x2="${x}" y2="${y}" stroke="#667eea" stroke-width="4" stroke-linecap="round"/>`;
-}
-
-if (showLabel) {
-  svg += `<text y="-12" text-anchor="middle" font-size="11" fill="#667eea" font-weight="600">${pad(hour)}:${pad(point.time.getMinutes())}</text>`;
-}
-svg += `</g>`;
-
-});
-  // 3. Draw enhanced gap break symbols ON TOP
-  gaps.forEach((gap, gapIndex) => {
-    const gapStartX = xPositions[gap.startIndex];
-    const gapEndX = Math.min(xPositions[gap.endIndex], gapStartX + ONE_HOUR_WIDTH);
-    const gapMidX = (gapStartX + gapEndX) / 2;
-    const gapHeight = 35;
-    const gapY = chartHeight - padding - gapHeight;
     
-    // Enhanced zigzag break symbol (multiple lines for visibility)
-    const zigzagPoints = [
-      [gapMidX - 12, gapY + 8],
-      [gapMidX - 4, gapY - 4],
-      [gapMidX + 4, gapY + 8],
-      [gapMidX + 12, gapY - 4]
-    ];
-    
-    svg += `<polyline points="${zigzagPoints.map(p => `${p[0]},${p[1]}`).join(' ')}" 
-                    fill="none" stroke="#ff4444" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`;
-    
-    // Gap duration label
-    const gapHours = Math.round(gap.duration / (60 * 60 * 1000));
-    svg += `<text x="${gapMidX}" y="${gapY + 28}" text-anchor="middle" 
-                    font-size="12" font-weight="700" fill="#ff4444">⏸ ${gapHours}h GAP</text>`;
-  });
-
-  // 4. Compressed X-axis with gap-aware time markers
-  const majorHours = [0, 6, 12, 18, 24, 30, 36, 42, 48];
-  majorHours.forEach(hourOffset => {
-    // Find closest data point to this hour mark
-    const targetTime = new Date(relevantData[0].time.getTime() + hourOffset * 60 * 60 * 1000);
-    const closestPoint = relevantData.reduce((closest, point) => {
-      return Math.abs(point.time.getTime() - targetTime.getTime()) < 
-             Math.abs(closest.time.getTime() - targetTime.getTime()) ? point : closest;
-    }, relevantData[0]);
-    
-    const x = xPositions[relevantData.indexOf(closestPoint)];
-    if (x >= padding && x <= chartWidth - padding) {
-      svg += `<text x="${x}" y="${chartHeight - 8}" text-anchor="middle" font-size="11" fill="#667eea" font-weight="700">${pad(targetTime.getHours())}h</text>`;
+    // Time labels every 2 hours
+    if (point.time.getHours() % 2 === 0) {
+      svg += `<text y="-10" text-anchor="middle" font-size="11" fill="#667eea" font-weight="600">${pad(point.time.getHours())}h</text>`;
     }
+    svg += `</g>`;
   });
+
+  // **SIMPLE: Only mark large gaps with symbol, no backgrounds/compression**
+  for (let i = 1; i < relevantData.length; i++) {
+    const gapMs = relevantData[i].time.getTime() - relevantData[i-1].time.getTime();
+    if (gapMs > 3 * 60 * 60 * 1000) { // > 3 hours only
+      const gapMidX = (xPositions[i-1] + xPositions[i]) / 2;
+      const gapY = chartHeight - padding - 30;
+      
+      // Zigzag break symbol
+      svg += `<polyline points="${gapMidX-8},${gapY+5} ${gapMidX-2},${gapY-5} ${gapMidX+2},${gapY+5} ${gapMidX+8},${gapY-5}" 
+              fill="none" stroke="#ff4444" stroke-width="3" stroke-linecap="round"/>`;
+      
+      const gapHours = Math.round(gapMs / (60 * 60 * 1000));
+      svg += `<text x="${gapMidX}" y="${gapY + 25}" text-anchor="middle" font-size="10" fill="#ff4444" font-weight="600">⏸ ${gapHours}h</text>`;
+    }
+  }
+
+  // X-axis time markers (every 6 hours from start)
+  const startTime = relevantData[0].time;
+  for (let offset = 0; offset <= 48; offset += 6) {
+    const markerTime = new Date(startTime.getTime() + offset * 60 * 60 * 1000);
+    const markerX = padding + (markerTime.getTime() - startTime.getTime()) / totalTimeSpan * plotWidth;
+    if (markerX >= padding && markerX <= chartWidth - padding) {
+      svg += `<text x="${markerX}" y="${chartHeight - 8}" text-anchor="middle" font-size="11" fill="#667eea" font-weight="600">${pad(markerTime.getHours())}h</text>`;
+    }
+  }
 
   // Axes labels
   svg += `<text x="${padding/2}" y="${chartHeight/2}" text-anchor="middle" font-size="12" fill="#667eea" transform="rotate(-90 ${padding/2},${chartHeight/2})">PV Power (kW)</text>`;
-  svg += `<text x="${chartWidth/2}" y="${chartHeight - 10}" text-anchor="middle" font-size="12" fill="#667eea">Time (Compressed - Gaps Excluded)</text>`;
-
+  svg += `<text x="${chartWidth/2}" y="${chartHeight - 15}" text-anchor="middle" font-size="11" fill="#667eea">Time (48h forecast)</text>`;
   svg += `</svg>`;
 
-  // Stats
+  // Clean stats (no duplicate gap reporting)
   const avgPV = relevantData.reduce((sum, d) => sum + d.pvEstimate, 0) / relevantData.length;
-  const peakPV = maxPV;
-  const totalGapHours = gaps.reduce((sum, g) => sum + g.duration / (60*60*1000), 0);
+  const totalDurationHours = totalTimeSpan / (60 * 60 * 1000);
   
   svg += `<div style="margin:15px 0;text-align:center;color:white;font-size:0.95em;">
-            <div><strong>Avg:</strong> ${avgPV.toFixed(2)} kW | <strong>Peak:</strong> ${peakPV.toFixed(2)} kW</div>
-            <div><strong>Total gaps:</strong> ${totalGapHours.toFixed(1)}h compressed</div>
-            <div>Forecast from ${pad(relevantData[0].time.getHours())}:${pad(relevantData[0].time.getMinutes())} to ${pad(relevantData[relevantData.length-1].time.getHours())}:${pad(relevantData[relevantData.length-1].time.getMinutes())}</div>
-          </div>`;
+    <div><strong>Avg:</strong> ${avgPV.toFixed(2)} kW | <strong>Peak:</strong> ${maxPV.toFixed(2)} kW</div>
+    <div><strong>Span:</strong> ${totalDurationHours.toFixed(1)}h (${relevantData.length} points)</div>
+    <div>From ${pad(startTime.getHours())}:${pad(startTime.getMinutes())} to ${pad(relevantData[relevantData.length-1].time.getHours())}:${pad(relevantData[relevantData.length-1].time.getMinutes())}</div>
+  </div>`;
 
   return svg;
 }
