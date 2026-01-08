@@ -405,7 +405,7 @@ function createFullForecastChart(forecastData, now) {
     return '<div style="text-align:center;color:#666;">No solar production expected</div>';
   }
 
-  // **NEW: Split into solar production clusters (days)**
+  // Split into solar production clusters (days) - 8h gap threshold
   const clusters = [];
   let currentCluster = [relevantData[0]];
   
@@ -430,43 +430,38 @@ function createFullForecastChart(forecastData, now) {
     svg += `<line x1="${padding}" y1="${chartHeight - y}" x2="${chartWidth - padding}" y2="${chartHeight - y}" stroke="#f0f0f0" stroke-width="1"/>`;
   }
 
-  // **NEW: Compress positioning - allocate equal space to each cluster**
-  const clusterSpacing = 30; // pixels between clusters
-  const availableWidth = plotWidth - (clusters.length - 1) * clusterSpacing;
+  // FIXED: Proper horizontal positioning with cluster spacing
+  const clusterSpacing = 35;
+  const availableWidth = plotWidth - (Math.max(1, clusters.length - 1)) * clusterSpacing;
   const widthPerCluster = availableWidth / clusters.length;
   
-  const xPositions = [];
+  const xPositions = new Array(relevantData.length);
   const yPositions = relevantData.map(point => 
     chartHeight - padding - (point.pvEstimate / maxPV) * plotHeight
   );
 
   // Position each cluster
-  let globalXOffset = padding;
-  relevantData.forEach((point, i) => {
-    const clusterIndex = clusters.findIndex(cluster => cluster.includes(point));
-    const localIndex = clusters[clusterIndex].indexOf(point);
-    const clusterStartTime = clusters[clusterIndex][0].time.getTime();
-    const clusterDuration = clusters[clusterIndex][clusters[clusterIndex].length-1].time.getTime() - clusterStartTime;
+  clusters.forEach((cluster, clusterIndex) => {
+    const clusterXStart = padding + clusterIndex * (widthPerCluster + clusterSpacing);
+    const clusterStartTime = cluster[0].time.getTime();
+    const clusterDuration = cluster[cluster.length - 1].time.getTime() - clusterStartTime;
     
-    const localX = (point.time.getTime() - clusterStartTime) / clusterDuration * widthPerCluster;
-    xPositions[i] = globalXOffset + localX;
+    cluster.forEach((point) => {
+      const globalIndex = relevantData.indexOf(point);
+      const localX = clusterDuration > 0 ? (point.time.getTime() - clusterStartTime) / clusterDuration * widthPerCluster : 0;
+      xPositions[globalIndex] = clusterXStart + localX;
+    });
   });
-  
-  globalXOffset += widthPerCluster + clusterSpacing;
 
   // Draw connecting lines WITHIN clusters only
   for (let i = 1; i < relevantData.length; i++) {
-    const clusterIndex1 = clusters.findIndex(cluster => cluster.includes(relevantData[i-1]));
-    const clusterIndex2 = clusters.findIndex(cluster => cluster.includes(relevantData[i]));
-    
-    // Only connect within same cluster
-    if (clusterIndex1 === clusterIndex2) {
+    if (xPositions[i-1] && xPositions[i] && Math.abs(xPositions[i] - xPositions[i-1]) < widthPerCluster) {
       svg += `<line x1="${xPositions[i-1]}" y1="${yPositions[i-1]}" x2="${xPositions[i]}" y2="${yPositions[i]}" 
               stroke="#667eea" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
     }
   }
 
-  // Draw data points
+  // Draw data points and reference lines
   relevantData.forEach((point, i) => {
     const x = xPositions[i];
     const y = yPositions[i];
@@ -482,9 +477,11 @@ function createFullForecastChart(forecastData, now) {
     }
   });
 
-  // **NEW: Night gap indicators between clusters**
-  for (let c = 0; c < clusters.length - 1; c++) {
-    const gapMidX = xPositions[clusters[c].slice(-1)[0].index] + widthPerCluster/2 + clusterSpacing/2;
+  // Night indicators between clusters
+  for (let c = 0; c < Math.max(0, clusters.length - 1); c++) {
+    const thisEndX = xPositions[relevantData.indexOf(clusters[c][clusters[c].length - 1])];
+    const nextStartX = xPositions[relevantData.indexOf(clusters[c + 1][0])];
+    const gapMidX = (thisEndX + nextStartX) / 2;
     const gapY = chartHeight - padding - 30;
     
     svg += `<polyline points="${gapMidX-12},${gapY+8} ${gapMidX-4},${gapY-4} ${gapMidX+4},${gapY+8} ${gapMidX+12},${gapY-4}" 
@@ -492,16 +489,18 @@ function createFullForecastChart(forecastData, now) {
     svg += `<text x="${gapMidX}" y="${gapY + 25}" text-anchor="middle" font-size="10" fill="#ff4444" font-weight="600">🌙 Night</text>`;
   }
 
-  // X-axis labels (Day 1, Day 2)
-  svg += `<text x="${padding + widthPerCluster/2}" y="${chartHeight - 8}" text-anchor="middle" font-size="11" fill="#666">Day 1</text>`;
-  if (clusters.length > 1) {
-    svg += `<text x="${padding + widthPerCluster + clusterSpacing + widthPerCluster/2}" y="${chartHeight - 8}" text-anchor="middle" font-size="11" fill="#666">Day 2</text>`;
-  }
+  // Day labels
+  clusters.forEach((cluster, c) => {
+    const clusterCenterX = padding + c * (widthPerCluster + clusterSpacing) + widthPerCluster / 2;
+    svg += `<text x="${clusterCenterX}" y="${chartHeight - 8}" text-anchor="middle" font-size="11" fill="#666">Day ${c + 1}</text>`;
+  });
 
+  // Axes labels
   svg += `<text x="${padding/2}" y="${chartHeight/2}" text-anchor="middle" font-size="12" fill="#667eea" transform="rotate(-90 ${padding/2},${chartHeight/2})">PV Power (kW)</text>`;
-  svg += `<text x="${chartWidth/2}" y="${chartHeight - 25}" text-anchor="middle" font-size="11" fill="#667eea">Solar Production Periods (Night Compressed)</text>`;
+  svg += `<text x="${chartWidth/2}" y="${chartHeight - 25}" text-anchor="middle" font-size="11" fill="#667eea">Solar Days (8h+ Night Compressed)</text>`;
   svg += `</svg>`;
 
+  // Stats
   const avgPV = relevantData.reduce((sum, d) => sum + d.pvEstimate, 0) / relevantData.length;
   svg += `<div style="margin:15px 0;text-align:center;color:white;font-size:0.95em;">
     <div><strong>Avg:</strong> ${avgPV.toFixed(2)} kW | <strong>Peak:</strong> ${maxPV.toFixed(2)} kW</div>
