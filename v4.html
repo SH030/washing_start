@@ -451,11 +451,12 @@ function createFullForecastChart(forecastData, now) {
   });
 
   // 1. Draw gap truncation backgrounds FIRST (behind everything)
-  gaps.forEach(gap => {
-    const gapStartX = xPositions[gap.startIndex];
-    const gapEndX = xPositions[gap.endIndex];
-    const gapWidth = gapEndX - gapStartX;
-    
+const ONE_HOUR_WIDTH = pxPerNonGapMs * (60 * 60 * 1000); // Fixed 1-hour width
+gaps.forEach(gap => {
+  const gapStartX = xPositions[gap.startIndex];
+  const gapEndX = Math.min(xPositions[gap.endIndex], gapStartX + ONE_HOUR_WIDTH);
+  const gapWidth = gapEndX - gapStartX;
+  
     // Vertical truncation background (faded diagonal pattern)
     svg += `
       <defs>
@@ -470,33 +471,39 @@ function createFullForecastChart(forecastData, now) {
   });
 
   // 2. Draw data points and lines (on top of backgrounds)
-  relevantData.forEach((point, i) => {
-    const x = xPositions[i];
-    const y = chartHeight - padding - (point.pvEstimate / maxPV) * plotHeight;
-    
-    // Data point with label
-    svg += `<g transform="translate(${x}, ${y})">
-              <circle r="6" fill="#667eea" stroke="white" stroke-width="3">
-                <title>${pad(point.time.getHours())}:${pad(point.time.getMinutes())} ${point.pvEstimate.toFixed(2)} kW</title>
-              </circle>
-              <text y="-12" text-anchor="middle" font-size="11" fill="#667eea" font-weight="600">${pad(point.time.getHours())}:${pad(point.time.getMinutes())}</text>
-            </g>`;
-    
-    // Vertical reference line
-    svg += `<line x1="${x}" y1="${chartHeight - padding}" x2="${x}" y2="${padding}" stroke="#e8e8e8" stroke-width="1" stroke-dasharray="3,3"/>`;
-    
-    // Connecting line to previous point
-    if (i > 0) {
-      const prevX = xPositions[i-1];
-      const prevY = chartHeight - padding - (relevantData[i-1].pvEstimate / maxPV) * plotHeight;
-      svg += `<line x1="${prevX}" y1="${prevY}" x2="${x}" y2="${y}" stroke="#667eea" stroke-width="4" stroke-linecap="round"/>`;
-    }
-  });
+relevantData.forEach((point, i) => {
+  const x = xPositions[i];
+  const y = chartHeight - padding - (point.pvEstimate / maxPV) * plotHeight;
+  
+  // Data point with label ONLY every 2nd hour (00, 02, 04, etc.)
+  const hour = point.time.getHours();
+  const showLabel = hour % 2 === 0;
+  
+  svg += `<g transform="translate(${x}, ${y})">
+          <circle r="6" fill="#667eea" stroke="white" stroke-width="3">
+            <title>${pad(point.time.getHours())}:${pad(point.time.getMinutes())} ${point.pvEstimate.toFixed(2)} kW</title>
+          </circle>`;
 
+// ✅ ADD: Vertical reference line
+svg += `<line x1="${x}" y1="${chartHeight - padding}" x2="${x}" y2="${padding}" stroke="#e8e8e8" stroke-width="1" stroke-dasharray="3,3"/>`;
+
+// ✅ ADD: Connecting line to previous point
+if (i > 0) {
+  const prevX = xPositions[i-1];
+  const prevY = chartHeight - padding - (relevantData[i-1].pvEstimate / maxPV) * plotHeight;
+  svg += `<line x1="${prevX}" y1="${prevY}" x2="${x}" y2="${y}" stroke="#667eea" stroke-width="4" stroke-linecap="round"/>`;
+}
+
+if (showLabel) {
+  svg += `<text y="-12" text-anchor="middle" font-size="11" fill="#667eea" font-weight="600">${pad(hour)}:${pad(point.time.getMinutes())}</text>`;
+}
+svg += `</g>`;
+
+});
   // 3. Draw enhanced gap break symbols ON TOP
   gaps.forEach((gap, gapIndex) => {
     const gapStartX = xPositions[gap.startIndex];
-    const gapEndX = xPositions[gap.endIndex];
+    const gapEndX = Math.min(xPositions[gap.endIndex], gapStartX + ONE_HOUR_WIDTH);
     const gapMidX = (gapStartX + gapEndX) / 2;
     const gapHeight = 35;
     const gapY = chartHeight - padding - gapHeight;
