@@ -405,10 +405,9 @@ function createFullForecastChart(forecastData, now) {
     return '<div style="text-align:center;color:#666;">No solar production expected</div>';
   }
 
-  // Split into solar production clusters (days) - 8h gap threshold
+  // [Cluster logic unchanged - keep as is]
   const clusters = [];
   let currentCluster = [relevantData[0]];
-  
   for (let i = 1; i < relevantData.length; i++) {
     const gapMs = relevantData[i].time.getTime() - relevantData[i-1].time.getTime();
     if (gapMs > 8 * 60 * 60 * 1000) {
@@ -424,13 +423,14 @@ function createFullForecastChart(forecastData, now) {
   
   let svg = `<svg width="${chartWidth}" height="${chartHeight}" class="forecast-svg" viewBox="0 0 ${chartWidth} ${chartHeight}">`;
   
+  // [Grid lines, positioning, lines - keep unchanged until data points]
+  
   // Grid lines
   for (let i = 0; i <= 5; i++) {
     const y = padding + (plotHeight / 5) * i;
     svg += `<line x1="${padding}" y1="${chartHeight - y}" x2="${chartWidth - padding}" y2="${chartHeight - y}" stroke="#f0f0f0" stroke-width="1"/>`;
   }
 
-  // Position clusters
   const clusterSpacing = 35;
   const availableWidth = plotWidth - (Math.max(1, clusters.length - 1)) * clusterSpacing;
   const widthPerCluster = availableWidth / clusters.length;
@@ -444,7 +444,6 @@ function createFullForecastChart(forecastData, now) {
     const clusterXStart = padding + clusterIndex * (widthPerCluster + clusterSpacing);
     const clusterStartTime = cluster[0].time.getTime();
     const clusterDuration = cluster[cluster.length - 1].time.getTime() - clusterStartTime;
-    
     cluster.forEach((point) => {
       const globalIndex = relevantData.indexOf(point);
       const localX = clusterDuration > 0 ? (point.time.getTime() - clusterStartTime) / clusterDuration * widthPerCluster : 0;
@@ -452,61 +451,49 @@ function createFullForecastChart(forecastData, now) {
     });
   });
 
-  // Lines within clusters
   for (let i = 1; i < relevantData.length; i++) {
     if (xPositions[i-1] && xPositions[i] && Math.abs(xPositions[i] - xPositions[i-1]) < widthPerCluster) {
-      svg += `<line x1="${xPositions[i-1]}" y1="${yPositions[i-1]}" x2="${xPositions[i]}" y2="${yPositions[i]}" 
-              stroke="#667eea" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+      svg += `<line x1="${xPositions[i-1]}" y1="${yPositions[i-1]}" x2="${xPositions[i]}" y2="${yPositions[i]}" stroke="#667eea" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
     }
   }
 
+  // Data points + FIXED labels (no more y>50 restriction)
   relevantData.forEach((point, i) => {
-  const x = xPositions[i];
-  const y = yPositions[i];
-  const minutes = point.time.getMinutes();
-  
-  // Data point with mobile tooltip data
-  svg += `<g data-time="${pad(point.time.getHours())}:${pad(minutes)}" data-pv="${point.pvEstimate.toFixed(2)}">
-    <circle cx="${x}" cy="${y}" r="6" fill="#667eea" stroke="white" stroke-width="2" class="data-point"/>
-    <line x1="${x}" y1="${chartHeight - padding}" x2="${x}" y2="${y}" stroke="#e8e8e8" stroke-width="1" stroke-dasharray="2,2"/>
-  </g>`;
-  
-  // **FIXED: Hour labels only on :00, positioned ABOVE point**
-  if (minutes === 0 && y > 50) {  // Only if point is high enough on chart
-    svg += `<text x="${x}" y="${y - 20}" text-anchor="middle" font-size="11" fill="#667eea" font-weight="600">${pad(point.time.getHours())}h</text>`;
-  }
-});
+    const x = xPositions[i];
+    const y = yPositions[i];
+    const minutes = point.time.getMinutes();
+    
+    svg += `<g data-time="${pad(point.time.getHours())}:${pad(minutes)}" data-pv="${point.pvEstimate.toFixed(2)}">
+      <circle cx="${x}" cy="${y}" r="6" fill="#667eea" stroke="white" stroke-width="2" class="data-point"/>
+      <line x1="${x}" y1="${chartHeight - padding}" x2="${x}" y2="${y}" stroke="#e8e8e8" stroke-width="1" stroke-dasharray="2,2"/>
+    </g>`;
+    
+    if (minutes === 0) {
+      const labelY = Math.max(padding + 15, y - 22);
+      svg += `<text x="${x}" y="${labelY}" text-anchor="middle" font-size="12" fill="#667eea" font-weight="700" stroke="white" stroke-width="2" paint-order="stroke">${pad(point.time.getHours())}h</text>`;
+    }
+  });
 
-  // Night indicators
+  // [Night indicators, day labels, axes - keep unchanged]
   for (let c = 0; c < Math.max(0, clusters.length - 1); c++) {
     const thisEndX = xPositions[relevantData.indexOf(clusters[c][clusters[c].length - 1])];
     const nextStartX = xPositions[relevantData.indexOf(clusters[c + 1][0])];
     const gapMidX = (thisEndX + nextStartX) / 2;
     const gapY = chartHeight - padding - 30;
-    
-    svg += `<polyline points="${gapMidX-12},${gapY+8} ${gapMidX-4},${gapY-4} ${gapMidX+4},${gapY+8} ${gapMidX+12},${gapY-4}" 
-            fill="none" stroke="#ff4444" stroke-width="3" stroke-linecap="round"/>
-            <text x="${gapMidX}" y="${gapY + 25}" text-anchor="middle" font-size="10" fill="#ff4444" font-weight="600">🌙 Night</text>`;
+    svg += `<polyline points="${gapMidX-12},${gapY+8} ${gapMidX-4},${gapY-4} ${gapMidX+4},${gapY+8} ${gapMidX+12},${gapY-4}" fill="none" stroke="#ff4444" stroke-width="3" stroke-linecap="round"/><text x="${gapMidX}" y="${gapY + 25}" text-anchor="middle" font-size="10" fill="#ff4444" font-weight="600">🌙 Night</text>`;
   }
 
-  // Day labels
   clusters.forEach((cluster, c) => {
     const clusterCenterX = padding + c * (widthPerCluster + clusterSpacing) + widthPerCluster / 2;
     svg += `<text x="${clusterCenterX}" y="${chartHeight - 8}" text-anchor="middle" font-size="11" fill="#666">Day ${c + 1}</text>`;
   });
 
-  // Axes
   svg += `<text x="${padding/2}" y="${chartHeight/2}" text-anchor="middle" font-size="12" fill="#667eea" transform="rotate(-90 ${padding/2},${chartHeight/2})">PV Power (kW)</text>`;
   svg += `<text x="${chartWidth/2}" y="${chartHeight - 25}" text-anchor="middle" font-size="11" fill="#667eea">Solar Days (8h+ Night Compressed)</text>`;
   svg += `</svg>`;
 
-  // Mobile tooltip HTML
-  let tooltipHtml = '<div id="svg-tooltip" style="';
-  tooltipHtml += 'position:absolute; display:none; background:rgba(0,0,0,0.9); color:white; padding:8px 12px; border-radius:6px; font-size:12px; pointer-events:none; z-index:1000;';
-  tooltipHtml += 'box-shadow:0 4px 12px rgba(0,0,0,0.3); max-width:200px; line-height:1.3;">';
-  tooltipHtml += '</div>';
+  const tooltipHtml = '<div id="svg-tooltip" style="position:absolute;display:none;background:rgba(0,0,0,0.9);color:white;padding:8px 12px;border-radius:6px;font-size:12px;pointer-events:none;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:200px;line-height:1.3;"></div>';
 
-  // Stats
   const avgPV = relevantData.reduce((sum, d) => sum + d.pvEstimate, 0) / relevantData.length;
   const stats = `<div style="margin:15px 0;text-align:center;color:white;font-size:0.95em;">
     <div><strong>Avg:</strong> ${avgPV.toFixed(2)} kW | <strong>Peak:</strong> ${maxPV.toFixed(2)} kW</div>
@@ -515,52 +502,62 @@ function createFullForecastChart(forecastData, now) {
 
   const fullHtml = svg + tooltipHtml + stats;
 
-  // **Mobile/Desktop tooltip handler**
+  // **SINGLE CLEAN TOOLTIP HANDLER - NO DUPLICATION**
   setTimeout(() => {
     const svgElement = document.querySelector('.forecast-svg');
     const tooltip = document.getElementById('svg-tooltip');
-    
     if (!svgElement || !tooltip) return;
 
     const points = svgElement.querySelectorAll('.data-point');
     
     const showTooltip = (e, pointData) => {
-      tooltip.innerHTML = `${pointData.time}<br>${pointData.pv} kW`;
+      tooltip.innerHTML = `<strong>${pointData.time}</strong><br>${pointData.pv} kW`;
       tooltip.style.display = 'block';
       const rect = e.target.getBoundingClientRect();
-      tooltip.style.left = (rect.left + rect.width/2 - 80) + 'px';
-      tooltip.style.top = (rect.top - 10) + 'px';
+      tooltip.style.left = (rect.left + rect.width/2 - 50) + 'px';
+      tooltip.style.top = (rect.top - 35) + 'px';
     };
 
-    const hideTooltip = () => {
-      tooltip.style.display = 'none';
-    };
+    const hideTooltip = () => tooltip.style.display = 'none';
 
     points.forEach(point => {
+      point.style.cursor = 'pointer';
       point.addEventListener('mouseenter', (e) => {
-        const g = e.target.closest('[data-point]');
-        if (g) {
-          const time = g.getAttribute('data-time');
-          const pv = g.getAttribute('data-pv');
+        const gParent = e.target.closest('g[data-time]');
+        if (gParent) {
+          const time = gParent.getAttribute('data-time');
+          const pv = gParent.getAttribute('data-pv');
           showTooltip(e, {time, pv});
         }
       });
       
       point.addEventListener('mouseleave', hideTooltip);
       
-      // **Mobile: Tap to show**
-      point.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        const g = e.target.closest('[data-point]');
-        if (g) {
-          const time = g.getAttribute('data-time');
-          const pv = g.getAttribute('data-pv');
+      point.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const gParent = e.target.closest('g[data-time]');
+        if (gParent) {
+          const time = gParent.getAttribute('data-time');
+          const pv = gParent.getAttribute('data-pv');
           showTooltip(e, {time, pv});
-          setTimeout(hideTooltip, 3000); // Auto-hide after 3s
+          setTimeout(hideTooltip, 3000);
         }
       });
+      
+      point.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const gParent = e.target.closest('g[data-time]');
+        if (gParent) {
+          const time = gParent.getAttribute('data-time');
+          const pv = gParent.getAttribute('data-pv');
+          showTooltip(e, {time, pv});
+          setTimeout(hideTooltip, 4000);
+        }
+      }, { passive: false });
     });
-  }, 100);
+    
+    tooltip.addEventListener('click', (e) => e.stopPropagation());
+  }, 150);
 
   return fullHtml;
 }
