@@ -385,8 +385,7 @@ function createPVContributionsChart(startTime, durationMinutes, forecastData) {
 }
 
 // NEW: Create full solar forecast chart
-// NEW: Create single day solar forecast chart
-function createDayForecastChart(forecastData, now, dayDate) {
+function createFullForecastChart(forecastData, now) {
   if (!forecastData || forecastData.length === 0) {
     return '<div style="text-align:center;color:#666;">No forecast data available</div>';
   }
@@ -397,21 +396,34 @@ function createDayForecastChart(forecastData, now, dayDate) {
   const plotWidth = chartWidth - padding * 2;
   const plotHeight = chartHeight - padding * 1.5;
 
-  // Filter data for specific day (00:00 to 23:59)
-  const dayStart = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate(), 0, 0);
-  const dayEnd = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate(), 23, 59);
-  
-  const dayData = forecastData
-    .filter(d => d.time >= dayStart && d.time <= dayEnd && d.pvEstimate > 0.01)
+  const endTime = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+  const relevantData = forecastData
+    .filter(d => d.time >= now && d.time <= endTime && d.pvEstimate > 0.01)
     .sort((a, b) => a.time.getTime() - b.time.getTime());
 
-  if (dayData.length === 0) {
+  if (relevantData.length === 0) {
     return '<div style="text-align:center;color:#666;">No solar production expected</div>';
   }
 
-  const maxPV = Math.max(...dayData.map(d => d.pvEstimate));
+  // [Cluster logic unchanged - keep as is]
+  const clusters = [];
+  let currentCluster = [relevantData[0]];
+  for (let i = 1; i < relevantData.length; i++) {
+    const gapMs = relevantData[i].time.getTime() - relevantData[i-1].time.getTime();
+    if (gapMs > 8 * 60 * 60 * 1000) {
+      clusters.push(currentCluster);
+      currentCluster = [relevantData[i]];
+    } else {
+      currentCluster.push(relevantData[i]);
+    }
+  }
+  clusters.push(currentCluster);
+
+  const maxPV = Math.max(...relevantData.map(d => d.pvEstimate));
   
-  let svg = `<svg width="${chartWidth}" height="${chartHeight}" class="forecast-svg day-svg-${dayDate.getDate()}" viewBox="0 0 ${chartWidth} ${chartHeight}">`;
+  let svg = `<svg width="${chartWidth}" height="${chartHeight}" class="forecast-svg" viewBox="0 0 ${chartWidth} ${chartHeight}">`;
+  
+  // [Grid lines, positioning, lines - keep unchanged until data points]
   
   // Grid lines
   for (let i = 0; i <= 5; i++) {
@@ -419,23 +431,34 @@ function createDayForecastChart(forecastData, now, dayDate) {
     svg += `<line x1="${padding}" y1="${chartHeight - y}" x2="${chartWidth - padding}" y2="${chartHeight - y}" stroke="#f0f0f0" stroke-width="1"/>`;
   }
 
-  // X positions based on time of day
-  const xPositions = dayData.map(point => {
-    const minutesFromMidnight = point.time.getHours() * 60 + point.time.getMinutes();
-    return padding + (minutesFromMidnight / (24 * 60)) * plotWidth;
-  });
-
-  const yPositions = dayData.map(point => 
+  const clusterSpacing = 35;
+  const availableWidth = plotWidth - (Math.max(1, clusters.length - 1)) * clusterSpacing;
+  const widthPerCluster = availableWidth / clusters.length;
+  
+  const xPositions = new Array(relevantData.length);
+  const yPositions = relevantData.map(point => 
     chartHeight - padding - (point.pvEstimate / maxPV) * plotHeight
   );
 
-  // Connect data points with lines
-  for (let i = 1; i < dayData.length; i++) {
-    svg += `<line x1="${xPositions[i-1]}" y1="${yPositions[i-1]}" x2="${xPositions[i]}" y2="${yPositions[i]}" stroke="#667eea" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+  clusters.forEach((cluster, clusterIndex) => {
+    const clusterXStart = padding + clusterIndex * (widthPerCluster + clusterSpacing);
+    const clusterStartTime = cluster[0].time.getTime();
+    const clusterDuration = cluster[cluster.length - 1].time.getTime() - clusterStartTime;
+    cluster.forEach((point) => {
+      const globalIndex = relevantData.indexOf(point);
+      const localX = clusterDuration > 0 ? (point.time.getTime() - clusterStartTime) / clusterDuration * widthPerCluster : 0;
+      xPositions[globalIndex] = clusterXStart + localX;
+    });
+  });
+
+  for (let i = 1; i < relevantData.length; i++) {
+    if (xPositions[i-1] && xPositions[i] && Math.abs(xPositions[i] - xPositions[i-1]) < widthPerCluster) {
+      svg += `<line x1="${xPositions[i-1]}" y1="${yPositions[i-1]}" x2="${xPositions[i]}" y2="${yPositions[i]}" stroke="#667eea" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
   }
 
-  // Data points with labels
-  dayData.forEach((point, i) => {
+  // Data points + FIXED labels (no more y>50 restriction)
+  relevantData.forEach((point, i) => {
     const x = xPositions[i];
     const y = yPositions[i];
     const minutes = point.time.getMinutes();
@@ -451,226 +474,106 @@ function createDayForecastChart(forecastData, now, dayDate) {
     }
   });
 
-  // Y-axis label
+  // [Night indicators, day labels, axes - keep unchanged]
+  for (let c = 0; c < Math.max(0, clusters.length - 1); c++) {
+    const thisEndX = xPositions[relevantData.indexOf(clusters[c][clusters[c].length - 1])];
+    const nextStartX = xPositions[relevantData.indexOf(clusters[c + 1][0])];
+    const gapMidX = (thisEndX + nextStartX) / 2;
+    const gapY = chartHeight - padding - 30;
+    svg += `<polyline points="${gapMidX-12},${gapY+8} ${gapMidX-4},${gapY-4} ${gapMidX+4},${gapY+8} ${gapMidX+12},${gapY-4}" fill="none" stroke="#ff4444" stroke-width="3" stroke-linecap="round"/><text x="${gapMidX}" y="${gapY + 25}" text-anchor="middle" font-size="10" fill="#ff4444" font-weight="600">🌙 Night</text>`;
+  }
+
+  clusters.forEach((cluster, c) => {
+    const clusterCenterX = padding + c * (widthPerCluster + clusterSpacing) + widthPerCluster / 2;
+    svg += `<text x="${clusterCenterX}" y="${chartHeight - 8}" text-anchor="middle" font-size="11" fill="#666">Day ${c + 1}</text>`;
+  });
+
   svg += `<text x="${padding/2}" y="${chartHeight/2}" text-anchor="middle" font-size="12" fill="#667eea" transform="rotate(-90 ${padding/2},${chartHeight/2})">PV Power (kW)</text>`;
-  svg += `<text x="${chartWidth/2}" y="${chartHeight - 25}" text-anchor="middle" font-size="11" fill="#667eea">${pad(dayDate.getDate())}/${pad(dayDate.getMonth()+1)} - PV Forecast</text>`;
+  svg += `<text x="${chartWidth/2}" y="${chartHeight - 25}" text-anchor="middle" font-size="11" fill="#667eea">Solar Days (8h+ Night Compressed)</text>`;
   svg += `</svg>`;
 
-  const tooltipHtml = `<div class="day-svg-${dayDate.getDate()}-tooltip" style="position:absolute;display:none;background:rgba(0,0,0,0.9);color:white;padding:8px 12px;border-radius:6px;font-size:12px;pointer-events:none;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:200px;line-height:1.3;"></div>`;
+  const tooltipHtml = '<div id="svg-tooltip" style="position:absolute;display:none;background:rgba(0,0,0,0.9);color:white;padding:8px 12px;border-radius:6px;font-size:12px;pointer-events:none;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:200px;line-height:1.3;"></div>';
 
-  const avgPV = dayData.reduce((sum, d) => sum + d.pvEstimate, 0) / dayData.length;
+  const avgPV = relevantData.reduce((sum, d) => sum + d.pvEstimate, 0) / relevantData.length;
   const stats = `<div style="margin:15px 0;text-align:center;color:white;font-size:0.95em;">
     <div><strong>Avg:</strong> ${avgPV.toFixed(2)} kW | <strong>Peak:</strong> ${maxPV.toFixed(2)} kW</div>
-    <div><strong>${dayData.length}</strong> points</div>
+    <div><strong>${clusters.length} day${clusters.length > 1 ? 's' : ''}</strong> | ${relevantData.length} points</div>
   </div>`;
 
-  return svg + tooltipHtml + stats;
-}
+  const fullHtml = svg + tooltipHtml + stats;
 
-// MODIFIED: Show forecast charts with day toggle
-async function showForecastChartHandler() {
-  const resultDiv = document.getElementById('result');
-  resultDiv.innerHTML = '<div style="text-align:center;padding:2em;">Loading daily solar forecasts...</div>';
+// **CORRECTED TOOLTIP - Positions JUST ABOVE data point**
+setTimeout(() => {
+  const svgElement = document.querySelector('.forecast-svg');
+  const tooltip = document.getElementById('svg-tooltip');
+  if (!svgElement || !tooltip) return;
+
+  const points = svgElement.querySelectorAll('.data-point');
   
-  try {
-    const now = new Date();
-    const forecastData = await fetchForecastFromSheet();
+  const showTooltip = (e, pointData) => {
+  tooltip.innerHTML = `<strong>${pointData.time}</strong><br>${pointData.pv} kW`;
+  tooltip.style.display = 'block';
+  
+  const pointRect = e.target.getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+
+  // Center horizontally on the point
+  let left = pointRect.left + (pointRect.width / 2) - tooltipRect.width / 2;
+  // Place just above the point (8px gap)
+  let top = pointRect.top - tooltipRect.height - 8;
+
+  // Keep tooltip inside viewport
+  left = Math.max(5, Math.min(left, window.innerWidth - tooltipRect.width - 5));
+  top = Math.max(5, top);
+
+  tooltip.style.left = `${left + window.scrollX}px`;
+  tooltip.style.top = `${top + window.scrollY}px`;
+};
+
+
+  const hideTooltip = () => tooltip.style.display = 'none';
+
+  points.forEach(point => {
+    point.style.cursor = 'pointer';
     
-    // Calculate date range (today + next 1-2 days with solar data)
-    const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const tomorrowDate = new Date(todayDate.getTime() + 24 * 60 * 60 * 1000);
-    const dayAfterTomorrowDate = new Date(todayDate.getTime() + 2 * 24 * 60 * 60 * 1000);
-    
-    // Filter days that have solar production
-    const daysWithSolar = [];
-    const dayCheck = [todayDate, tomorrowDate, dayAfterTomorrowDate];
-    
-    dayCheck.forEach(dayDate => {
-      const dayData = forecastData.filter(d => {
-        const dDay = new Date(d.time.getFullYear(), d.time.getMonth(), d.time.getDate());
-        return dDay.getTime() === dayDate.getTime() && d.pvEstimate > 0.01;
-      });
-      if (dayData.length > 0) {
-        daysWithSolar.push({date: dayDate, dataCount: dayData.length});
+    point.addEventListener('mouseenter', (e) => {
+      const gParent = e.target.closest('g[data-time]');
+      if (gParent) {
+        const time = gParent.getAttribute('data-time');
+        const pv = gParent.getAttribute('data-pv');
+        showTooltip(e, {time, pv});
       }
     });
     
-    if (daysWithSolar.length === 0) {
-      resultDiv.innerHTML = '<div style="text-align:center;color:#666;">No solar production expected in the next few days</div>';
-      return;
-    }
+    point.addEventListener('mouseleave', hideTooltip);
     
-    const activeDayIndex = 0;
-    
-    resultDiv.innerHTML = `
-      <div class="forecast-chart-container">
-        <div class="forecast-chart-title">🌞 Daily Solar PV Forecasts</div>
-        
-        <!-- Day Toggle UI -->
-        <div class="day-toggle-container" style="margin-bottom: 20px;">
-          ${daysWithSolar.map((day, index) => `
-            <button class="day-toggle-btn ${index === activeDayIndex ? 'active' : ''}" 
-                    data-day-index="${index}" 
-                    data-day-date="${day.date.toISOString().split('T')[0]}">
-              ${pad(day.date.getDate())}/${pad(day.date.getMonth()+1)}/${day.date.getFullYear().toString().slice(-2)}
-            </button>
-          `).join('')}
-        </div>
-        
-        <!-- Chart Container -->
-        <div id="daily-chart-container" data-active-day="${activeDayIndex}">
-          ${createDayForecastChart(forecastData, now, daysWithSolar[activeDayIndex].date)}
-        </div>
-        
-        <button type="button" id="showPredictionsBtn" class="main-btn" style="margin-top:1em;display:block;margin-left:auto;margin-right:auto;">
-          🔆 Back to Best Start Times
-        </button>
-      </div>
-      
-      <style>
-        .day-toggle-container {
-          display: flex;
-          gap: 12px;
-          justify-content: center;
-          flex-wrap: wrap;
-          margin-bottom: 20px;
-        }
-        .day-toggle-btn {
-          padding: 10px 20px;
-          border: 2px solid #667eea;
-          background: rgba(102, 126, 234, 0.1);
-          color: white;
-          border-radius: 25px;
-          font-weight: 600;
-          font-size: 14px;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          backdrop-filter: blur(10px);
-        }
-        .day-toggle-btn:hover {
-          background: rgba(102, 126, 234, 0.3);
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-        }
-        .day-toggle-btn.active {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-          transform: translateY(-1px);
-        }
-        #daily-chart-container {
-          min-height: 250px;
-          position: relative;
-        }
-        @media (max-width: 500px) {
-          .day-toggle-container {
-            flex-direction: column;
-            align-items: center;
-          }
-          .day-toggle-btn {
-            width: 200px;
-            padding: 12px 16px;
-          }
-        }
-      </style>
-    `;
-    
-    // Add back button handler
-    document.getElementById('showPredictionsBtn').onclick = predictBestStartTimesHandler;
-    
-    // Store data globally for toggle functionality
-    window.currentForecastData = forecastData;
-    window.daysWithSolar = daysWithSolar;
-    
-    // Setup day toggle functionality
-    setupDayToggle(daysWithSolar, forecastData, now);
-    
-    // Setup tooltips for active chart
-    setupDayTooltips(daysWithSolar[activeDayIndex].date.getDate());
-    
-  } catch (error) {
-    resultDiv.textContent = "Error loading forecast charts: " + error.message;
-    console.error("Forecast chart error: ", error);
-  }
-}
-
-function setupDayToggle(daysWithSolar, forecastData, now) {
-  const container = document.getElementById('daily-chart-container');
-  
-  document.querySelectorAll('.day-toggle-btn').forEach(btn => {
-    btn.onclick = function() {
-      const dayIndex = parseInt(this.dataset.dayIndex);
-      const dayDate = new Date(this.dataset.dayDate);
-      
-      // Update active button
-      document.querySelectorAll('.day-toggle-btn').forEach(b => b.classList.remove('active'));
-      this.classList.add('active');
-      
-      // Hide old tooltip
-      document.querySelectorAll('[class*="tooltip"]').forEach(t => t.style.display = 'none');
-      
-      // Update container
-      container.innerHTML = createDayForecastChart(forecastData, now, dayDate);
-      container.dataset.activeDay = dayIndex;
-      
-      // Setup new tooltips
-      setupDayTooltips(dayDate.getDate());
-    };
-  });
-}
-
-function setupDayTooltips(dayNum) {
-  setTimeout(() => {
-    const svgElement = document.querySelector(`.day-svg-${dayNum}`);
-    const tooltip = document.querySelector(`.day-svg-${dayNum}-tooltip`);
-    if (!svgElement || !tooltip) return;
-
-    const points = svgElement.querySelectorAll('.data-point');
-    
-    const showTooltip = (e, pointData) => {
-      tooltip.innerHTML = `<strong>${pointData.time}</strong><br>${pointData.pv} kW`;
-      tooltip.style.display = 'block';
-      
-      const pointRect = e.target.getBoundingClientRect();
-      const tooltipRect = tooltip.getBoundingClientRect();
-
-      let left = pointRect.left + (pointRect.width / 2) - tooltipRect.width / 2;
-      let top = pointRect.top - tooltipRect.height - 8;
-
-      left = Math.max(5, Math.min(left, window.innerWidth - tooltipRect.width - 5));
-      top = Math.max(5, top);
-
-      tooltip.style.left = `${left + window.scrollX}px`;
-      tooltip.style.top = `${top + window.scrollY}px`;
-    };
-
-    const hideTooltip = () => tooltip.style.display = 'none';
-
-    points.forEach(point => {
-      point.style.cursor = 'pointer';
-      
-      point.addEventListener('mouseenter', (e) => {
-        const gParent = e.target.closest('g[data-time]');
-        if (gParent) {
-          const time = gParent.getAttribute('data-time');
-          const pv = gParent.getAttribute('data-pv');
-          showTooltip(e, {time, pv});
-        }
-      });
-      
-      point.addEventListener('mouseleave', hideTooltip);
-      
-      point.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const gParent = e.target.closest('g[data-time]');
-        if (gParent) {
-          const time = gParent.getAttribute('data-time');
-          const pv = gParent.getAttribute('data-pv');
-          showTooltip(e, {time, pv});
-          setTimeout(hideTooltip, 3000);
-        }
-      });
+    point.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const gParent = e.target.closest('g[data-time]');
+      if (gParent) {
+        const time = gParent.getAttribute('data-time');
+        const pv = gParent.getAttribute('data-pv');
+        showTooltip(e, {time, pv});
+        setTimeout(hideTooltip, 3000);
+      }
     });
-  }, 150);
+    
+    point.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const gParent = e.target.closest('g[data-time]');
+      if (gParent) {
+        const time = gParent.getAttribute('data-time');
+        const pv = gParent.getAttribute('data-pv');
+        showTooltip(e, {time, pv});
+        setTimeout(hideTooltip, 4000);
+      }
+    }, { passive: false });
+  });
+  
+  tooltip.addEventListener('click', (e) => e.stopPropagation());
+}, 150);
+
+  return fullHtml;
 }
 
 // Fetch forecast data from Google Sheet CSV export
@@ -793,129 +696,30 @@ async function predictBestStartTimesHandler() {
   }
 }
 
-// FIXED: Show forecast charts with day toggle (uses new createDayForecastChart)
+// NEW: Show full solar forecast button handler
 async function showForecastChartHandler() {
   const resultDiv = document.getElementById('result');
-  resultDiv.innerHTML = '<div style="text-align:center;padding:2em;">Loading daily solar forecasts...</div>';
+  resultDiv.innerHTML = '<div style="text-align:center;padding:2em;">Loading full solar forecast...</div>';
   
   try {
     const now = new Date();
     const forecastData = await fetchForecastFromSheet();
     
-    // Calculate date range (today + next 1-2 days with solar data)
-    const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const tomorrowDate = new Date(todayDate.getTime() + 24 * 60 * 60 * 1000);
-    const dayAfterTomorrowDate = new Date(todayDate.getTime() + 2 * 24 * 60 * 60 * 1000);
-    
-    // Filter days that have solar production
-    const daysWithSolar = [];
-    const dayCheck = [todayDate, tomorrowDate, dayAfterTomorrowDate];
-    
-    dayCheck.forEach(dayDate => {
-      const dayData = forecastData.filter(d => {
-        const dDay = new Date(d.time.getFullYear(), d.time.getMonth(), d.time.getDate());
-        return dDay.getTime() === dayDate.getTime() && d.pvEstimate > 0.01;
-      });
-      if (dayData.length > 0) {
-        daysWithSolar.push({date: dayDate, dataCount: dayData.length});
-      }
-    });
-    
-    if (daysWithSolar.length === 0) {
-      resultDiv.innerHTML = '<div style="text-align:center;color:#666;">No solar production expected in the next few days</div>';
-      return;
-    }
-    
-    const activeDayIndex = 0;
-    
+    const chartHtml = createFullForecastChart(forecastData, now);
     resultDiv.innerHTML = `
       <div class="forecast-chart-container">
-        <div class="forecast-chart-title">🌞 Daily Solar PV Forecasts</div>
-        
-        <!-- Day Toggle UI -->
-        <div class="day-toggle-container" style="margin-bottom: 20px;">
-          ${daysWithSolar.map((day, index) => `
-            <button class="day-toggle-btn ${index === activeDayIndex ? 'active' : ''}" 
-                    data-day-index="${index}" 
-                    data-day-date="${day.date.toISOString().split('T')[0]}">
-              ${pad(day.date.getDate())}/${pad(day.date.getMonth()+1)}/${day.date.getFullYear().toString().slice(-2)}
-            </button>
-          `).join('')}
-        </div>
-        
-        <!-- Chart Container -->
-        <div id="daily-chart-container" data-active-day="${activeDayIndex}">
-          ${createDayForecastChart(forecastData, now, daysWithSolar[activeDayIndex].date)}
-        </div>
-        
+        <div class="forecast-chart-title">🌞 Full Solar PV Forecast (Next 48 Hours)</div>
+        ${chartHtml}
         <button type="button" id="showPredictionsBtn" class="main-btn" style="margin-top:1em;display:block;margin-left:auto;margin-right:auto;">
           🔆 Back to Best Start Times
         </button>
-      </div>
-      
-      <style>
-        .day-toggle-container {
-          display: flex;
-          gap: 12px;
-          justify-content: center;
-          flex-wrap: wrap;
-          margin-bottom: 20px;
-        }
-        .day-toggle-btn {
-          padding: 10px 20px;
-          border: 2px solid #667eea;
-          background: rgba(102, 126, 234, 0.1);
-          color: #667eea;
-          border-radius: 25px;
-          font-weight: 600;
-          font-size: 14px;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          backdrop-filter: blur(10px);
-        }
-        .day-toggle-btn:hover {
-          background: rgba(102, 126, 234, 0.3);
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-        }
-        .day-toggle-btn.active {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-          transform: translateY(-1px);
-        }
-        #daily-chart-container {
-          min-height: 250px;
-          position: relative;
-        }
-        @media (max-width: 500px) {
-          .day-toggle-container {
-            flex-direction: column;
-            align-items: center;
-          }
-          .day-toggle-btn {
-            width: 200px;
-            padding: 12px 16px;
-          }
-        }
-      </style>
-    `;
+      </div>`;
     
     // Add back button handler
     document.getElementById('showPredictionsBtn').onclick = predictBestStartTimesHandler;
     
-    // Store data globally for toggle functionality
-    window.currentForecastData = forecastData;
-    window.daysWithSolar = daysWithSolar;
-    
-    // Setup day toggle functionality
-    setupDayToggle(daysWithSolar, forecastData, now);
-    
-    // Setup tooltips for active chart
-    setupDayTooltips(daysWithSolar[activeDayIndex].date.getDate());
-    
   } catch (error) {
-    resultDiv.textContent = "Error loading forecast charts: " + error.message;
+    resultDiv.textContent = "Error loading forecast chart: " + error.message;
     console.error("Forecast chart error: ", error);
   }
 }
