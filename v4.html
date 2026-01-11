@@ -511,20 +511,25 @@ setTimeout(() => {
   const points = svgElement.querySelectorAll('.data-point');
   
   const showTooltip = (e, pointData) => {
-    tooltip.innerHTML = `<strong>${pointData.time}</strong><br>${pointData.pv} kW`;
-    tooltip.style.display = 'block';
-    
-    // **FIXED POSITIONING: Relative to SVG + precise offset above point**
-    const svgRect = svgElement.getBoundingClientRect();
-    const pointRect = e.target.getBoundingClientRect();
-    
-    // Position tooltip centered above data point (10px clearance)
-    const tooltipLeft = pointRect.left + (pointRect.width / 2) - 50;  // 100px wide tooltip
-    const tooltipTop = pointRect.top - 45;  // 45px above circle top
-    
-    tooltip.style.left = Math.max(5, tooltipLeft) + 'px';
-    tooltip.style.top = tooltipTop + 'px';
-  };
+  tooltip.innerHTML = `<strong>${pointData.time}</strong><br>${pointData.pv} kW`;
+  tooltip.style.display = 'block';
+  
+  const pointRect = e.target.getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+
+  // Center horizontally on the point
+  let left = pointRect.left + (pointRect.width / 2) - tooltipRect.width / 2;
+  // Place just above the point (8px gap)
+  let top = pointRect.top - tooltipRect.height - 8;
+
+  // Keep tooltip inside viewport
+  left = Math.max(5, Math.min(left, window.innerWidth - tooltipRect.width - 5));
+  top = Math.max(5, top);
+
+  tooltip.style.left = `${left + window.scrollX}px`;
+  tooltip.style.top = `${top + window.scrollY}px`;
+};
+
 
   const hideTooltip = () => tooltip.style.display = 'none';
 
