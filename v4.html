@@ -409,11 +409,7 @@ function createPVContributionsChart(startTime, durationMinutes, forecastData) {
   return svg;
 }
 
-// FULL TIME-BASED POSITIONING: 30min = identical space everywhere
-// DEBUG VERSION - Replace your createFullForecastChart with this
 function createFullForecastChart(forecastData, now) {
-  console.log('DEBUG: Input data length:', forecastData?.length || 0);
-  
   if (!forecastData || forecastData.length === 0) {
     return '<div style="text-align:center;color:#666;">No forecast data available</div>';
   }
@@ -421,21 +417,17 @@ function createFullForecastChart(forecastData, now) {
   const chartWidth = 840;
   const chartHeight = 200;
   const padding = 40;
+  const plotHeight = chartHeight - padding * 1.5;
 
   const endTime = new Date(now.getTime() + 48 * 60 * 60 * 1000);
   const relevantData = forecastData
     .filter(d => d.time >= now && d.time <= endTime && d.pvEstimate > 0.01)
     .sort((a, b) => a.time.getTime() - b.time.getTime());
 
-  console.log('DEBUG: relevantData length:', relevantData.length);
-  console.log('DEBUG: First point:', relevantData[0]);
-  console.log('DEBUG: Last point:', relevantData[relevantData.length-1]);
-
   if (relevantData.length === 0) {
     return '<div style="text-align:center;color:#666;">No solar production expected</div>';
   }
 
-  // CONSTANTS FIRST
   const MINUTES_PER_INTERVAL = 30;
   const PX_PER_30MIN = 22;
   const REFERENCE_TIME = now.getTime();
@@ -445,7 +437,6 @@ function createFullForecastChart(forecastData, now) {
   let currentCluster = [{data: relevantData[0], idx: 0}];
   for (let i = 1; i < relevantData.length; i++) {
     const gapMs = relevantData[i].time.getTime() - relevantData[i-1].time.getTime();
-    console.log(`DEBUG: Gap ${i}: ${gapMs/1000/60/60}h`);
     if (gapMs > 8 * 60 * 60 * 1000) {
       clusters.push(currentCluster);
       currentCluster = [{data: relevantData[i], idx: i}];
@@ -454,51 +445,100 @@ function createFullForecastChart(forecastData, now) {
     }
   }
   clusters.push(currentCluster);
-  console.log('DEBUG: Clusters found:', clusters.length);
 
   const maxPV = Math.max(...relevantData.map(d => d.pvEstimate));
-  console.log('DEBUG: maxPV:', maxPV);
-
   function pad(num) { return num.toString().padStart(2, '0'); }
   
   let svg = `<svg width="${chartWidth}" height="${chartHeight}" class="forecast-svg" viewBox="0 0 ${chartWidth} ${chartHeight}">`;
   
-  // Grid + basic elements (unchanged)
+  // Grid lines
   for (let i = 0; i <= 5; i++) {
-    const y = padding + ((chartHeight - padding * 1.5) / 5) * i;
+    const y = padding + (plotHeight / 5) * i;
     svg += `<line x1="${padding}" y1="${chartHeight - y}" x2="${chartWidth - padding}" y2="${chartHeight - y}" stroke="#f0f0f0" stroke-width="1"/>`;
   }
 
-  // POSITIONS
+  // **FIXED POSITIONING - NO RIGHT CLAMP**
   const xPositions = new Array(relevantData.length);
   const yPositions = relevantData.map(point => 
-    chartHeight - padding - (point.pvEstimate / maxPV) * (chartHeight - padding * 1.5)
+    chartHeight - padding - (point.pvEstimate / maxPV) * plotHeight
   );
 
   relevantData.forEach((point, i) => {
     const minutesFromNow = (point.time.getTime() - REFERENCE_TIME) / (1000 * 60);
     const intervalsFromNow = minutesFromNow / MINUTES_PER_INTERVAL;
     xPositions[i] = padding + intervalsFromNow * PX_PER_30MIN;
-    xPositions[i] = Math.max(padding, Math.min(chartWidth - padding, xPositions[i]));
-    console.log(`DEBUG: Point ${i}: x=${xPositions[i].toFixed(1)}, time=${pad(point.time.getHours())}:${pad(point.time.getMinutes())}`);
+    // ONLY CLAMP LEFT EDGE
+    xPositions[i] = Math.max(padding, xPositions[i]);
   });
 
-  // **ONLY PLOT POINTS - NO FANCY STUFF**
+  // Lines (skip across night gaps)
+  for (let i = 1; i < relevantData.length; i++) {
+    const gapMs = relevantData[i].time.getTime() - relevantData[i-1].time.getTime();
+    if (gapMs > 8 * 60 * 60 * 1000) continue; // Skip night gaps
+    if (!isNaN(xPositions[i-1]) && !isNaN(xPositions[i])) {
+      svg += `<line x1="${xPositions[i-1]}" y1="${yPositions[i-1]}" x2="${xPositions[i]}" y2="${yPositions[i]}" stroke="#667eea" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
+  }
+
+  // Data points + labels
   relevantData.forEach((point, i) => {
     const x = xPositions[i];
     const y = yPositions[i];
-    if (isNaN(x) || isNaN(y)) {
-      console.error(`DEBUG ERROR: Invalid position at index ${i}: x=${x}, y=${y}`);
-      return;
-    }
+    if (isNaN(x) || isNaN(y)) return;
     
-    svg += `<circle cx="${x}" cy="${y}" r="6" fill="#667eea" stroke="white" stroke-width="2"/>`;
-    svg += `<text x="${x}" y="${y-8}" text-anchor="middle" font-size="10" fill="#667eea">${point.pvEstimate.toFixed(1)}</text>`;
+    const minutes = point.time.getMinutes();
+    svg += `<g data-time="${pad(point.time.getHours())}:${pad(minutes)}" data-pv="${point.pvEstimate.toFixed(2)}">
+      <circle cx="${x}" cy="${y}" r="6" fill="#667eea" stroke="white" stroke-width="2" class="data-point"/>
+      <line x1="${x}" y1="${chartHeight - padding}" x2="${x}" y2="${y}" stroke="#e8e8e8" stroke-width="1" stroke-dasharray="2,2"/>
+    </g>`;
+    
+    if (minutes === 0) {
+      const labelY = Math.max(padding + 15, y - 22);
+      svg += `<text x="${x}" y="${labelY}" text-anchor="middle" font-size="12" fill="#667eea" font-weight="700" stroke="white" stroke-width="2" paint-order="stroke">${pad(point.time.getHours())}h</text>`;
+    }
   });
 
-  svg += `</svg><div style="font-size:12px;color:#666;">Check browser console (F12) for debug info</div>`;
+  // Night gaps
+  for (let c = 0; c < Math.max(0, clusters.length - 1); c++) {
+    const thisEndIdx = clusters[c][clusters[c].length - 1].idx;
+    const nextStartIdx = clusters[c + 1][0].idx;
+    if (thisEndIdx >= 0 && nextStartIdx >= 0 && 
+        thisEndIdx < xPositions.length && nextStartIdx < xPositions.length &&
+        !isNaN(xPositions[thisEndIdx]) && !isNaN(xPositions[nextStartIdx])) {
+      const thisEndX = xPositions[thisEndIdx];
+      const nextStartX = xPositions[nextStartIdx];
+      const gapMidX = Math.min(chartWidth - padding, (thisEndX + nextStartX) / 2);
+      const gapY = chartHeight - padding - 30;
+      svg += `<polyline points="${gapMidX-12},${gapY+8} ${gapMidX-4},${gapY-4} ${gapMidX+4},${gapY+8} ${gapMidX+12},${gapY-4}" fill="none" stroke="#ff4444" stroke-width="3" stroke-linecap="round"/><text x="${gapMidX}" y="${gapY + 25}" text-anchor="middle" font-size="10" fill="#ff4444" font-weight="600">🌙 Night</text>`;
+    }
+  }
 
-  return svg;
+  // Day labels (clamp to visible area)
+  clusters.forEach((cluster, c) => {
+    if (cluster.length > 0) {
+      const firstIdx = cluster[0].idx;
+      const lastIdx = cluster[cluster.length - 1].idx;
+      if (firstIdx >= 0 && lastIdx >= 0 && 
+          firstIdx < xPositions.length && lastIdx < xPositions.length &&
+          !isNaN(xPositions[firstIdx]) && !isNaN(xPositions[lastIdx])) {
+        let clusterCenterX = (xPositions[firstIdx] + xPositions[lastIdx]) / 2;
+        clusterCenterX = Math.max(padding + 30, Math.min(chartWidth - padding - 30, clusterCenterX));
+        svg += `<text x="${clusterCenterX}" y="${chartHeight - 8}" text-anchor="middle" font-size="11" fill="#666">Day ${c + 1}</text>`;
+      }
+    }
+  });
+
+  svg += `<text x="${padding/2}" y="${chartHeight/2}" text-anchor="middle" font-size="12" fill="#667eea" transform="rotate(-90 ${padding/2},${chartHeight/2})">PV Power (kW)</text>`;
+  svg += `<text x="${chartWidth/2}" y="${chartHeight - 25}" text-anchor="middle" font-size="11" fill="#667eea">Solar Forecast (30min = ${PX_PER_30MIN}px) →</text>`;
+  svg += `</svg>`;
+
+  const avgPV = relevantData.reduce((sum, d) => sum + d.pvEstimate, 0) / relevantData.length;
+  const stats = `<div style="margin:15px 0;text-align:center;color:white;font-size:0.95em;">
+    <div><strong>Avg:</strong> ${avgPV.toFixed(2)} kW | <strong>Peak:</strong> ${maxPV.toFixed(2)} kW</div>
+    <div><strong>${clusters.length} days</strong> | ${relevantData.length} points | 48h forecast</div>
+  </div>`;
+
+  return svg + stats;
 }
 
 // Fetch forecast data from Google Sheet CSV export
