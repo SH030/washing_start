@@ -430,16 +430,16 @@ function createFullForecastChart(forecastData, now) {
     return '<div style="text-align:center;color:#666;">No solar production expected</div>';
   }
 
-  // Build clusters for night gaps only
+  // Build clusters for night gaps only - track original indices
   const clusters = [];
-  let currentCluster = [relevantData[0]];
+  let currentCluster = [{data: relevantData[0], idx: 0}];
   for (let i = 1; i < relevantData.length; i++) {
     const gapMs = relevantData[i].time.getTime() - relevantData[i-1].time.getTime();
     if (gapMs > 8 * 60 * 60 * 1000) {
       clusters.push(currentCluster);
-      currentCluster = [relevantData[i]];
+      currentCluster = [{data: relevantData[i], idx: i}];
     } else {
-      currentCluster.push(relevantData[i]);
+      currentCluster.push({data: relevantData[i], idx: i});
     }
   }
   clusters.push(currentCluster);
@@ -499,9 +499,11 @@ function createFullForecastChart(forecastData, now) {
 
   // Night gaps between clusters
   for (let c = 0; c < Math.max(0, clusters.length - 1); c++) {
-    const thisEndX = xPositions[relevantData.indexOf(clusters[c][clusters[c].length - 1])];
-    const nextStartX = xPositions[relevantData.indexOf(clusters[c + 1][0])];
-    if (thisEndX && nextStartX) {
+    const thisEndIdx = clusters[c][clusters[c].length - 1].idx;
+    const nextStartIdx = clusters[c + 1][0].idx;
+    const thisEndX = xPositions[thisEndIdx];
+    const nextStartX = xPositions[nextStartIdx];
+    if (thisEndX && nextStartX && !isNaN(thisEndX) && !isNaN(nextStartX)) {
       const gapMidX = (thisEndX + nextStartX) / 2;
       const gapY = chartHeight - padding - 30;
       svg += `<polyline points="${gapMidX-12},${gapY+8} ${gapMidX-4},${gapY-4} ${gapMidX+4},${gapY+8} ${gapMidX+12},${gapY-4}" fill="none" stroke="#ff4444" stroke-width="3" stroke-linecap="round"/><text x="${gapMidX}" y="${gapY + 25}" text-anchor="middle" font-size="10" fill="#ff4444" font-weight="600">🌙 Night</text>`;
@@ -511,10 +513,12 @@ function createFullForecastChart(forecastData, now) {
   // Day labels (positioned at cluster centers)
   clusters.forEach((cluster, c) => {
     if (cluster.length > 0) {
-      const firstPointIndex = relevantData.indexOf(cluster[0]);
-      const lastPointIndex = relevantData.indexOf(cluster[cluster.length - 1]);
-      const clusterCenterX = (xPositions[firstPointIndex] + xPositions[lastPointIndex]) / 2;
-      svg += `<text x="${clusterCenterX}" y="${chartHeight - 8}" text-anchor="middle" font-size="11" fill="#666">Day ${c + 1}</text>`;
+      const firstIdx = cluster[0].idx;
+      const lastIdx = cluster[cluster.length - 1].idx;
+      const clusterCenterX = (xPositions[firstIdx] + xPositions[lastIdx]) / 2;
+      if (!isNaN(clusterCenterX)) {
+        svg += `<text x="${clusterCenterX}" y="${chartHeight - 8}" text-anchor="middle" font-size="11" fill="#666">Day ${c + 1}</text>`;
+      }
     }
   });
 
