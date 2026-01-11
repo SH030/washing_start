@@ -793,30 +793,129 @@ async function predictBestStartTimesHandler() {
   }
 }
 
-// NEW: Show full solar forecast button handler
+// FIXED: Show forecast charts with day toggle (uses new createDayForecastChart)
 async function showForecastChartHandler() {
   const resultDiv = document.getElementById('result');
-  resultDiv.innerHTML = '<div style="text-align:center;padding:2em;">Loading full solar forecast...</div>';
+  resultDiv.innerHTML = '<div style="text-align:center;padding:2em;">Loading daily solar forecasts...</div>';
   
   try {
     const now = new Date();
     const forecastData = await fetchForecastFromSheet();
     
-    const chartHtml = createFullForecastChart(forecastData, now);
+    // Calculate date range (today + next 1-2 days with solar data)
+    const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrowDate = new Date(todayDate.getTime() + 24 * 60 * 60 * 1000);
+    const dayAfterTomorrowDate = new Date(todayDate.getTime() + 2 * 24 * 60 * 60 * 1000);
+    
+    // Filter days that have solar production
+    const daysWithSolar = [];
+    const dayCheck = [todayDate, tomorrowDate, dayAfterTomorrowDate];
+    
+    dayCheck.forEach(dayDate => {
+      const dayData = forecastData.filter(d => {
+        const dDay = new Date(d.time.getFullYear(), d.time.getMonth(), d.time.getDate());
+        return dDay.getTime() === dayDate.getTime() && d.pvEstimate > 0.01;
+      });
+      if (dayData.length > 0) {
+        daysWithSolar.push({date: dayDate, dataCount: dayData.length});
+      }
+    });
+    
+    if (daysWithSolar.length === 0) {
+      resultDiv.innerHTML = '<div style="text-align:center;color:#666;">No solar production expected in the next few days</div>';
+      return;
+    }
+    
+    const activeDayIndex = 0;
+    
     resultDiv.innerHTML = `
       <div class="forecast-chart-container">
-        <div class="forecast-chart-title">🌞 Full Solar PV Forecast (Next 48 Hours)</div>
-        ${chartHtml}
+        <div class="forecast-chart-title">🌞 Daily Solar PV Forecasts</div>
+        
+        <!-- Day Toggle UI -->
+        <div class="day-toggle-container" style="margin-bottom: 20px;">
+          ${daysWithSolar.map((day, index) => `
+            <button class="day-toggle-btn ${index === activeDayIndex ? 'active' : ''}" 
+                    data-day-index="${index}" 
+                    data-day-date="${day.date.toISOString().split('T')[0]}">
+              ${pad(day.date.getDate())}/${pad(day.date.getMonth()+1)}/${day.date.getFullYear().toString().slice(-2)}
+            </button>
+          `).join('')}
+        </div>
+        
+        <!-- Chart Container -->
+        <div id="daily-chart-container" data-active-day="${activeDayIndex}">
+          ${createDayForecastChart(forecastData, now, daysWithSolar[activeDayIndex].date)}
+        </div>
+        
         <button type="button" id="showPredictionsBtn" class="main-btn" style="margin-top:1em;display:block;margin-left:auto;margin-right:auto;">
           🔆 Back to Best Start Times
         </button>
-      </div>`;
+      </div>
+      
+      <style>
+        .day-toggle-container {
+          display: flex;
+          gap: 12px;
+          justify-content: center;
+          flex-wrap: wrap;
+          margin-bottom: 20px;
+        }
+        .day-toggle-btn {
+          padding: 10px 20px;
+          border: 2px solid #667eea;
+          background: rgba(102, 126, 234, 0.1);
+          color: #667eea;
+          border-radius: 25px;
+          font-weight: 600;
+          font-size: 14px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          backdrop-filter: blur(10px);
+        }
+        .day-toggle-btn:hover {
+          background: rgba(102, 126, 234, 0.3);
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        .day-toggle-btn.active {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+          transform: translateY(-1px);
+        }
+        #daily-chart-container {
+          min-height: 250px;
+          position: relative;
+        }
+        @media (max-width: 500px) {
+          .day-toggle-container {
+            flex-direction: column;
+            align-items: center;
+          }
+          .day-toggle-btn {
+            width: 200px;
+            padding: 12px 16px;
+          }
+        }
+      </style>
+    `;
     
     // Add back button handler
     document.getElementById('showPredictionsBtn').onclick = predictBestStartTimesHandler;
     
+    // Store data globally for toggle functionality
+    window.currentForecastData = forecastData;
+    window.daysWithSolar = daysWithSolar;
+    
+    // Setup day toggle functionality
+    setupDayToggle(daysWithSolar, forecastData, now);
+    
+    // Setup tooltips for active chart
+    setupDayTooltips(daysWithSolar[activeDayIndex].date.getDate());
+    
   } catch (error) {
-    resultDiv.textContent = "Error loading forecast chart: " + error.message;
+    resultDiv.textContent = "Error loading forecast charts: " + error.message;
     console.error("Forecast chart error: ", error);
   }
 }
