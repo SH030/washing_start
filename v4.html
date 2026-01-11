@@ -409,13 +409,13 @@ function createPVContributionsChart(startTime, durationMinutes, forecastData) {
   return svg;
 }
 
-// UPDATED: createFullForecastChart() - doubled width from 420px to 840px
+// FIXED: createFullForecastChart() - Equal spacing for ALL clusters regardless of data point density
 function createFullForecastChart(forecastData, now) {
   if (!forecastData || forecastData.length === 0) {
     return '<div style="text-align:center;color:#666;">No forecast data available</div>';
   }
 
-  const chartWidth = 840;  // Doubled from 420
+  const chartWidth = 840;
   const chartHeight = 200;
   const padding = 40;
   const plotWidth = chartWidth - padding * 2;
@@ -430,7 +430,7 @@ function createFullForecastChart(forecastData, now) {
     return '<div style="text-align:center;color:#666;">No solar production expected</div>';
   }
 
-  // [Cluster logic unchanged]
+  // Cluster logic unchanged
   const clusters = [];
   let currentCluster = [relevantData[0]];
   for (let i = 1; i < relevantData.length; i++) {
@@ -448,39 +448,46 @@ function createFullForecastChart(forecastData, now) {
   
   let svg = `<svg width="${chartWidth}" height="${chartHeight}" class="forecast-svg" viewBox="0 0 ${chartWidth} ${chartHeight}">`;
   
-  // Grid lines (scaled for wider chart)
+  // Grid lines
   for (let i = 0; i <= 5; i++) {
     const y = padding + (plotHeight / 5) * i;
     svg += `<line x1="${padding}" y1="${chartHeight - y}" x2="${chartWidth - padding}" y2="${chartHeight - y}" stroke="#f0f0f0" stroke-width="1"/>`;
   }
 
-  const clusterSpacing = 70;  // Increased for wider chart
-  const availableWidth = plotWidth - (Math.max(1, clusters.length - 1)) * clusterSpacing;
-  const widthPerCluster = availableWidth / clusters.length;
+  // **FIXED: Equal spacing allocation per cluster**
+  const clusterSpacing = 40;
+  const equalClusterWidth = (plotWidth - (Math.max(1, clusters.length - 1)) * clusterSpacing) / clusters.length;
   
   const xPositions = new Array(relevantData.length);
   const yPositions = relevantData.map(point => 
     chartHeight - padding - (point.pvEstimate / maxPV) * plotHeight
   );
 
+  // **EQUAL WIDTH PER CLUSTER - regardless of point count**
   clusters.forEach((cluster, clusterIndex) => {
-    const clusterXStart = padding + clusterIndex * (widthPerCluster + clusterSpacing);
-    const clusterStartTime = cluster[0].time.getTime();
-    const clusterDuration = cluster[cluster.length - 1].time.getTime() - clusterStartTime;
-    cluster.forEach((point) => {
-      const globalIndex = relevantData.indexOf(point);
-      const localX = clusterDuration > 0 ? (point.time.getTime() - clusterStartTime) / clusterDuration * widthPerCluster : 0;
-      xPositions[globalIndex] = clusterXStart + localX;
-    });
+    const clusterXStart = padding + clusterIndex * (equalClusterWidth + clusterSpacing);
+    
+    // Distribute points evenly across the full cluster width
+    const numPoints = cluster.length;
+    if (numPoints > 0) {
+      const spacingPerPoint = equalClusterWidth / (numPoints - 1 || 1);
+      
+      cluster.forEach((point, pointIndex) => {
+        const localX = pointIndex * spacingPerPoint;
+        const globalIndex = relevantData.indexOf(point);
+        xPositions[globalIndex] = clusterXStart + localX;
+      });
+    }
   });
 
-  // Rest of SVG generation unchanged...
+  // Lines between consecutive points
   for (let i = 1; i < relevantData.length; i++) {
-    if (xPositions[i-1] && xPositions[i] && Math.abs(xPositions[i] - xPositions[i-1]) < widthPerCluster) {
+    if (xPositions[i-1] && xPositions[i]) {
       svg += `<line x1="${xPositions[i-1]}" y1="${yPositions[i-1]}" x2="${xPositions[i]}" y2="${yPositions[i]}" stroke="#667eea" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
     }
   }
 
+  // Data points
   relevantData.forEach((point, i) => {
     const x = xPositions[i];
     const y = yPositions[i];
@@ -497,6 +504,7 @@ function createFullForecastChart(forecastData, now) {
     }
   });
 
+  // Night gaps
   for (let c = 0; c < Math.max(0, clusters.length - 1); c++) {
     const thisEndX = xPositions[relevantData.indexOf(clusters[c][clusters[c].length - 1])];
     const nextStartX = xPositions[relevantData.indexOf(clusters[c + 1][0])];
@@ -505,16 +513,17 @@ function createFullForecastChart(forecastData, now) {
     svg += `<polyline points="${gapMidX-12},${gapY+8} ${gapMidX-4},${gapY-4} ${gapMidX+4},${gapY+8} ${gapMidX+12},${gapY-4}" fill="none" stroke="#ff4444" stroke-width="3" stroke-linecap="round"/><text x="${gapMidX}" y="${gapY + 25}" text-anchor="middle" font-size="10" fill="#ff4444" font-weight="600">🌙 Night</text>`;
   }
 
+  // Day labels
   clusters.forEach((cluster, c) => {
-    const clusterCenterX = padding + c * (widthPerCluster + clusterSpacing) + widthPerCluster / 2;
+    const clusterCenterX = padding + c * (equalClusterWidth + clusterSpacing) + equalClusterWidth / 2;
     svg += `<text x="${clusterCenterX}" y="${chartHeight - 8}" text-anchor="middle" font-size="11" fill="#666">Day ${c + 1}</text>`;
   });
 
   svg += `<text x="${padding/2}" y="${chartHeight/2}" text-anchor="middle" font-size="12" fill="#667eea" transform="rotate(-90 ${padding/2},${chartHeight/2})">PV Power (kW)</text>`;
-  svg += `<text x="${chartWidth/2}" y="${chartHeight - 25}" text-anchor="middle" font-size="11" fill="#667eea">Solar Days (8h+ Night Compressed)</text>`;
+  svg += `<text x="${chartWidth/2}" y="${chartHeight - 25}" text-anchor="middle" font-size="11" fill="#667eea">Solar Days (Even Spacing)</text>`;
   svg += `</svg>`;
 
-  // Tooltip and stats code unchanged...
+  // Tooltip and stats (unchanged)
   const tooltipHtml = '<div id="svg-tooltip" style="position:absolute;display:none;background:rgba(0,0,0,0.9);color:white;padding:8px 12px;border-radius:6px;font-size:12px;pointer-events:none;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:200px;line-height:1.3;"></div>';
 
   const avgPV = relevantData.reduce((sum, d) => sum + d.pvEstimate, 0) / relevantData.length;
@@ -525,7 +534,7 @@ function createFullForecastChart(forecastData, now) {
 
   const fullHtml = svg + tooltipHtml + stats;
 
-  // Tooltip setup unchanged...
+  // Tooltip setup (unchanged)
   setTimeout(() => {
     const svgElement = document.querySelector('.forecast-svg');
     const tooltip = document.getElementById('svg-tooltip');
@@ -554,7 +563,6 @@ function createFullForecastChart(forecastData, now) {
 
     points.forEach(point => {
       point.style.cursor = 'pointer';
-      
       point.addEventListener('mouseenter', (e) => {
         const gParent = e.target.closest('g[data-time]');
         if (gParent) {
@@ -563,9 +571,7 @@ function createFullForecastChart(forecastData, now) {
           showTooltip(e, {time, pv});
         }
       });
-      
       point.addEventListener('mouseleave', hideTooltip);
-      
       point.addEventListener('click', (e) => {
         e.stopPropagation();
         const gParent = e.target.closest('g[data-time]');
@@ -576,7 +582,6 @@ function createFullForecastChart(forecastData, now) {
           setTimeout(hideTooltip, 3000);
         }
       });
-      
       point.addEventListener('touchstart', (e) => {
         e.preventDefault();
         const gParent = e.target.closest('g[data-time]');
@@ -588,7 +593,6 @@ function createFullForecastChart(forecastData, now) {
         }
       }, { passive: false });
     });
-    
     tooltip.addEventListener('click', (e) => e.stopPropagation());
   }, 150);
 
