@@ -431,25 +431,32 @@ function createFullForecastChart(forecastData, now) {
     svg += `<line x1="${padding}" y1="${chartHeight - y}" x2="${chartWidth - padding}" y2="${chartHeight - y}" stroke="#f0f0f0" stroke-width="1"/>`;
   }
 
-  const clusterSpacing = 35;
-  const availableWidth = plotWidth - (Math.max(1, clusters.length - 1)) * clusterSpacing;
-  const widthPerCluster = availableWidth / clusters.length;
-  
-  const xPositions = new Array(relevantData.length);
-  const yPositions = relevantData.map(point => 
-    chartHeight - padding - (point.pvEstimate / maxPV) * plotHeight
-  );
+  // Width proportional to # of POINTS per cluster (not time)
+const clusterPointCounts = clusters.map(cluster => cluster.length);  // [5, 15, 5]
+const totalPoints = clusterPointCounts.reduce((a, b) => a + b, 0);
 
-  clusters.forEach((cluster, clusterIndex) => {
-    const clusterXStart = padding + clusterIndex * (widthPerCluster + clusterSpacing);
-    const clusterStartTime = cluster[0].time.getTime();
-    const clusterDuration = cluster[cluster.length - 1].time.getTime() - clusterStartTime;
-    cluster.forEach((point) => {
-      const globalIndex = relevantData.indexOf(point);
-      const localX = clusterDuration > 0 ? (point.time.getTime() - clusterStartTime) / clusterDuration * widthPerCluster : 0;
-      xPositions[globalIndex] = clusterXStart + localX;
-    });
+const xPositions = new Array(relevantData.length);
+const yPositions = relevantData.map(point => 
+  chartHeight - padding - (point.pvEstimate / maxPV) * plotHeight
+);
+
+let cumulativePoints = 0;
+clusters.forEach((cluster, clusterIndex) => {
+  const pointsInCluster = cluster.length;
+  const clusterWeight = pointsInCluster / totalPoints;
+  const clusterWidth = clusterWeight * plotWidth;
+  const clusterXStart = padding + (cumulativePoints / totalPoints) * plotWidth;
+  
+  // Spread points EVENLY across cluster width by INDEX (ignores timestamps)
+  cluster.forEach((point, localIndex) => {
+    const globalIndex = relevantData.indexOf(point);
+    const localX = pointsInCluster > 1 ? (localIndex / (pointsInCluster - 1)) * clusterWidth : clusterWidth / 2;
+    xPositions[globalIndex] = clusterXStart + localX;
   });
+  
+  cumulativePoints += pointsInCluster;
+});
+
 
   for (let i = 1; i < relevantData.length; i++) {
     if (xPositions[i-1] && xPositions[i] && Math.abs(xPositions[i] - xPositions[i-1]) < widthPerCluster) {
@@ -484,9 +491,11 @@ function createFullForecastChart(forecastData, now) {
   }
 
   clusters.forEach((cluster, c) => {
-    const clusterCenterX = padding + c * (widthPerCluster + clusterSpacing) + widthPerCluster / 2;
-    svg += `<text x="${clusterCenterX}" y="${chartHeight - 8}" text-anchor="middle" font-size="11" fill="#666">Day ${c + 1}</text>`;
-  });
+  const midIndex = Math.floor(cluster.length / 2);
+  const midPointX = xPositions[relevantData.indexOf(cluster[midIndex])];
+  svg += `<text x="${midPointX}" y="${chartHeight - 8}" text-anchor="middle" font-size="11" fill="#666">Day ${c + 1}</text>`;
+});
+
 
   svg += `<text x="${padding/2}" y="${chartHeight/2}" text-anchor="middle" font-size="12" fill="#667eea" transform="rotate(-90 ${padding/2},${chartHeight/2})">PV Power (kW)</text>`;
   svg += `<text x="${chartWidth/2}" y="${chartHeight - 25}" text-anchor="middle" font-size="11" fill="#667eea">Solar Days (8h+ Night Compressed)</text>`;
