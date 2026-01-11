@@ -409,7 +409,7 @@ function createPVContributionsChart(startTime, durationMinutes, forecastData) {
   return svg;
 }
 
-// FIXED: createFullForecastChart() - Equal spacing for ALL clusters regardless of data point density
+// FINAL FIX: createFullForecastChart() - PERFECTLY EVEN cluster spacing
 function createFullForecastChart(forecastData, now) {
   if (!forecastData || forecastData.length === 0) {
     return '<div style="text-align:center;color:#666;">No forecast data available</div>';
@@ -430,7 +430,7 @@ function createFullForecastChart(forecastData, now) {
     return '<div style="text-align:center;color:#666;">No solar production expected</div>';
   }
 
-  // Cluster logic unchanged
+  // **CRITICAL FIX: Build cluster point indices FIRST**
   const clusters = [];
   let currentCluster = [relevantData[0]];
   for (let i = 1; i < relevantData.length; i++) {
@@ -454,76 +454,81 @@ function createFullForecastChart(forecastData, now) {
     svg += `<line x1="${padding}" y1="${chartHeight - y}" x2="${chartWidth - padding}" y2="${chartHeight - y}" stroke="#f0f0f0" stroke-width="1"/>`;
   }
 
-  // **FIXED: Equal spacing allocation per cluster**
-  const clusterSpacing = 40;
-  const equalClusterWidth = (plotWidth - (Math.max(1, clusters.length - 1)) * clusterSpacing) / clusters.length;
+  // **PERFECTLY EQUAL cluster allocation**
+  const numClusters = clusters.length;
+  const clusterSpacing = 30;
+  const clusterWidth = (plotWidth - (numClusters - 1) * clusterSpacing) / numClusters;
   
   const xPositions = new Array(relevantData.length);
   const yPositions = relevantData.map(point => 
     chartHeight - padding - (point.pvEstimate / maxPV) * plotHeight
   );
 
-  // **EQUAL WIDTH PER CLUSTER - regardless of point count**
+  // **POSITION CLUSTERS WITH IDENTICAL WIDTHS - then space points evenly within**
   clusters.forEach((cluster, clusterIndex) => {
-    const clusterXStart = padding + clusterIndex * (equalClusterWidth + clusterSpacing);
+    const clusterStartX = padding + clusterIndex * (clusterWidth + clusterSpacing);
+    const clusterEndX = clusterStartX + clusterWidth;
     
-    // Distribute points evenly across the full cluster width
+    // **EVENLY space ALL points within FIXED cluster bounds**
     const numPoints = cluster.length;
-    if (numPoints > 0) {
-      const spacingPerPoint = equalClusterWidth / (numPoints - 1 || 1);
+    for (let pointIndex = 0; pointIndex < numPoints; pointIndex++) {
+      const point = cluster[pointIndex];
+      const fractionAcrossCluster = numPoints > 1 ? pointIndex / (numPoints - 1) : 0.5;
+      const x = clusterStartX + (clusterEndX - clusterStartX) * fractionAcrossCluster;
       
-      cluster.forEach((point, pointIndex) => {
-        const localX = pointIndex * spacingPerPoint;
-        const globalIndex = relevantData.indexOf(point);
-        xPositions[globalIndex] = clusterXStart + localX;
-      });
+      const globalIndex = relevantData.indexOf(point);
+      xPositions[globalIndex] = x;
     }
   });
 
-  // Lines between consecutive points
+  // Connect consecutive points with lines
   for (let i = 1; i < relevantData.length; i++) {
-    if (xPositions[i-1] && xPositions[i]) {
+    if (xPositions[i-1] !== undefined && xPositions[i] !== undefined) {
       svg += `<line x1="${xPositions[i-1]}" y1="${yPositions[i-1]}" x2="${xPositions[i]}" y2="${yPositions[i]}" stroke="#667eea" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
     }
   }
 
-  // Data points
+  // Data points + labels
   relevantData.forEach((point, i) => {
     const x = xPositions[i];
     const y = yPositions[i];
     const minutes = point.time.getMinutes();
     
-    svg += `<g data-time="${pad(point.time.getHours())}:${pad(minutes)}" data-pv="${point.pvEstimate.toFixed(2)}">
-      <circle cx="${x}" cy="${y}" r="6" fill="#667eea" stroke="white" stroke-width="2" class="data-point"/>
-      <line x1="${x}" y1="${chartHeight - padding}" x2="${x}" y2="${y}" stroke="#e8e8e8" stroke-width="1" stroke-dasharray="2,2"/>
-    </g>`;
-    
-    if (minutes === 0) {
-      const labelY = Math.max(padding + 15, y - 22);
-      svg += `<text x="${x}" y="${labelY}" text-anchor="middle" font-size="12" fill="#667eea" font-weight="700" stroke="white" stroke-width="2" paint-order="stroke">${pad(point.time.getHours())}h</text>`;
+    if (x !== undefined) {
+      svg += `<g data-time="${pad(point.time.getHours())}:${pad(minutes)}" data-pv="${point.pvEstimate.toFixed(2)}">
+        <circle cx="${x}" cy="${y}" r="6" fill="#667eea" stroke="white" stroke-width="2" class="data-point"/>
+        <line x1="${x}" y1="${chartHeight - padding}" x2="${x}" y2="${y}" stroke="#e8e8e8" stroke-width="1" stroke-dasharray="2,2"/>
+      </g>`;
+      
+      if (minutes === 0) {
+        const labelY = Math.max(padding + 15, y - 22);
+        svg += `<text x="${x}" y="${labelY}" text-anchor="middle" font-size="12" fill="#667eea" font-weight="700" stroke="white" stroke-width="2" paint-order="stroke">${pad(point.time.getHours())}h</text>`;
+      }
     }
   });
 
-  // Night gaps
-  for (let c = 0; c < Math.max(0, clusters.length - 1); c++) {
+  // Night gaps between clusters
+  for (let c = 0; c < Math.max(0, numClusters - 1); c++) {
     const thisEndX = xPositions[relevantData.indexOf(clusters[c][clusters[c].length - 1])];
     const nextStartX = xPositions[relevantData.indexOf(clusters[c + 1][0])];
-    const gapMidX = (thisEndX + nextStartX) / 2;
-    const gapY = chartHeight - padding - 30;
-    svg += `<polyline points="${gapMidX-12},${gapY+8} ${gapMidX-4},${gapY-4} ${gapMidX+4},${gapY+8} ${gapMidX+12},${gapY-4}" fill="none" stroke="#ff4444" stroke-width="3" stroke-linecap="round"/><text x="${gapMidX}" y="${gapY + 25}" text-anchor="middle" font-size="10" fill="#ff4444" font-weight="600">🌙 Night</text>`;
+    if (thisEndX && nextStartX) {
+      const gapMidX = (thisEndX + nextStartX) / 2;
+      const gapY = chartHeight - padding - 30;
+      svg += `<polyline points="${gapMidX-12},${gapY+8} ${gapMidX-4},${gapY-4} ${gapMidX+4},${gapY+8} ${gapMidX+12},${gapY-4}" fill="none" stroke="#ff4444" stroke-width="3" stroke-linecap="round"/><text x="${gapMidX}" y="${gapY + 25}" text-anchor="middle" font-size="10" fill="#ff4444" font-weight="600">🌙 Night</text>`;
+    }
   }
 
-  // Day labels
+  // Day labels (centered in each cluster)
   clusters.forEach((cluster, c) => {
-    const clusterCenterX = padding + c * (equalClusterWidth + clusterSpacing) + equalClusterWidth / 2;
+    const clusterCenterX = padding + c * (clusterWidth + clusterSpacing) + clusterWidth / 2;
     svg += `<text x="${clusterCenterX}" y="${chartHeight - 8}" text-anchor="middle" font-size="11" fill="#666">Day ${c + 1}</text>`;
   });
 
   svg += `<text x="${padding/2}" y="${chartHeight/2}" text-anchor="middle" font-size="12" fill="#667eea" transform="rotate(-90 ${padding/2},${chartHeight/2})">PV Power (kW)</text>`;
-  svg += `<text x="${chartWidth/2}" y="${chartHeight - 25}" text-anchor="middle" font-size="11" fill="#667eea">Solar Days (Even Spacing)</text>`;
+  svg += `<text x="${chartWidth/2}" y="${chartHeight - 25}" text-anchor="middle" font-size="11" fill="#667eea">Solar Days (Perfect Even Spacing)</text>`;
   svg += `</svg>`;
 
-  // Tooltip and stats (unchanged)
+  // Tooltip + stats (unchanged from previous version)
   const tooltipHtml = '<div id="svg-tooltip" style="position:absolute;display:none;background:rgba(0,0,0,0.9);color:white;padding:8px 12px;border-radius:6px;font-size:12px;pointer-events:none;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:200px;line-height:1.3;"></div>';
 
   const avgPV = relevantData.reduce((sum, d) => sum + d.pvEstimate, 0) / relevantData.length;
@@ -548,13 +553,10 @@ function createFullForecastChart(forecastData, now) {
       
       const pointRect = e.target.getBoundingClientRect();
       const tooltipRect = tooltip.getBoundingClientRect();
-
       let left = pointRect.left + (pointRect.width / 2) - tooltipRect.width / 2;
       let top = pointRect.top - tooltipRect.height - 8;
-
       left = Math.max(5, Math.min(left, window.innerWidth - tooltipRect.width - 5));
       top = Math.max(5, top);
-
       tooltip.style.left = `${left + window.scrollX}px`;
       tooltip.style.top = `${top + window.scrollY}px`;
     };
